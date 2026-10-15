@@ -1,0 +1,6 @@
+interface:
+  display_name: "创想坞资产管理"
+  short_description: "查找整理创想坞素材库，绑定模型贴图、管理预览、备份取用并修复丢失关联"
+  default_prompt: "使用 $imagidock-assets 查找并整理我的创想坞资产库，保留已有引用并跟踪后台任务。"
+policy:
+  allow_implicit_invocation: true

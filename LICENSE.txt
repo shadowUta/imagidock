@@ -1,0 +1,11 @@
+Copyright (c) 2026 shadowUta. All rights reserved.
+
+No open-source license is granted for the original ImagiDock source code or
+artwork. Public availability of this repository is not a license grant.
+
+Third-party components retain their respective copyright and licenses.
+Nothing in this notice restricts rights granted by those licenses, including
+replacement of dynamically linked LGPL libraries and reverse engineering
+for debugging modifications to those libraries.
+
+See THIRD_PARTY_NOTICES.md and the licenses shipped with each distribution.

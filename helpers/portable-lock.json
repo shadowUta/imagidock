@@ -1,0 +1,24 @@
+{
+  "python": {
+    "version": "3.11.9",
+    "file": "python-3.11.9-embed-amd64.zip",
+    "url": "https://www.python.org/ftp/python/3.11.9/python-3.11.9-embed-amd64.zip",
+    "sha256": "009d6bf7e3b2ddca3d784fa09f90fe54336d5b60f0e0f305c37f400bf83cfd3b",
+    "digest_source": "https://www.python.org/ftp/python/3.11.9/python-3.11.9-embed-amd64.zip.sigstore",
+    "source": "https://www.python.org/ftp/python/3.11.9/Python-3.11.9.tar.xz"
+  },
+  "node": {
+    "version": "24.19.0",
+    "file": "node-v24.19.0-win-x64.zip",
+    "url": "https://nodejs.org/dist/v24.19.0/node-v24.19.0-win-x64.zip",
+    "sha256": "57f71ab3652e797d84acddc79c81cc9ff1c6ddb2a1974cdb83f00fee9bff4c73",
+    "digest_source": "https://nodejs.org/dist/v24.19.0/SHASUMS256.txt",
+    "source": "https://nodejs.org/dist/v24.19.0/node-v24.19.0.tar.xz"
+  },
+  "sai2": {
+    "version": "v2.0.0",
+    "url": "https://github.com/mishiki/sai2-parser/releases/download/v2.0.0/sai2topng-windows-x64.exe",
+    "sha256": "c79239a6e7a7d5ed2f319034b6875c47bd0e2f8c174f826cdad861f6441af241",
+    "source": "https://github.com/mishiki/sai2-parser/tree/v2.0.0"
+  }
+}

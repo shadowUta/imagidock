@@ -1,0 +1,23 @@
+{
+  "name": "imagidock-mcp",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "ImagiDock stdio MCP bridge to the desktop library service",
+  "license": "UNLICENSED",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "test": "npm run build && node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/server": "2.3.1",
+    "zod": "4.3.6"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/client": "2.3.1",
+    "@types/node": "22.19.15",
+    "typescript": "5.9.3"
+  }
+}

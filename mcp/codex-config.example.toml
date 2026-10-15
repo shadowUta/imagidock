@@ -1,0 +1,7 @@
+# Merge only when the user requests configuring their MCP client.
+# Replace the paths with this installation's paths; do not use npx downloads.
+[mcp_servers.imagidock]
+command = "node"
+args = ["<ImagiDock>/mcp/dist/index.js", "--config", "<ImagiDock>/mcp/config.local.json"]
+startup_timeout_sec = 20
+tool_timeout_sec = 45

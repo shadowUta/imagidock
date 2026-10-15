@@ -1,0 +1,27 @@
+{
+  "filament-v1.78.0-windows.tgz": {
+    "url": "https://github.com/google/filament/releases/download/v1.78.0/filament-v1.78.0-windows.tgz",
+    "file": "filament-v1.78.0-windows.tgz",
+    "sha256": "38643cfeec54ce58c4d5d57f94d935a247ad9c1f76968e24d5367d22b396f40f"
+  },
+  "sqlite-amalgamation-3500400.zip": {
+    "url": "https://www.sqlite.org/2025/sqlite-amalgamation-3500400.zip",
+    "file": "sqlite-amalgamation-3500400.zip",
+    "sha256": "1d3049dd0f830a025a53105fc79fd2ab9431aea99e137809d064d8ee8356b032"
+  },
+  "zstd-1.5.7.tar.gz": {
+    "url": "https://github.com/facebook/zstd/releases/download/v1.5.7/zstd-1.5.7.tar.gz",
+    "file": "zstd-1.5.7.tar.gz",
+    "sha256": "eb33e51f49a15e023950cd7825ca74a4a2b43db8354825ac24fc1b7ee09e6fa3"
+  },
+  "assimp-v5.4.3.zip": {
+    "url": "https://github.com/assimp/assimp/archive/refs/tags/v5.4.3.zip",
+    "file": "assimp-v5.4.3.zip",
+    "sha256": "795c29716f4ac123b403e53b677e9f32a8605c4a7b2d9904bfaae3f4053b506d"
+  },
+  "gh_2.79.0_windows_amd64.zip": {
+    "url": "https://github.com/cli/cli/releases/download/v2.79.0/gh_2.79.0_windows_amd64.zip",
+    "file": "gh_2.79.0_windows_amd64.zip",
+    "sha256": "0372db012e22db3d737ed592ed49b72fdcd47b46d7e9d7e75476410337bd278d"
+  }
+}
