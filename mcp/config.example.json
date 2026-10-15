@@ -1,5 +1,5 @@
 {
   "libraries": [{ "path": "../data/default" }],
-  "service_path": "../build/Release/imagidock-service.exe",
+  "service_path": "../build/bin/imagidock-service.exe",
   "timeout_ms": 30000
 }

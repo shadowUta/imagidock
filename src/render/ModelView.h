@@ -25,6 +25,7 @@ signals:
     void modelLoaded(const QJsonObject& metadata);
     void errorOccurred(const QString& message);
 protected:
+    bool event(QEvent*) override;
     void showEvent(QShowEvent*) override;
     void hideEvent(QHideEvent*) override;
     void paintEvent(QPaintEvent*) override {}
@@ -46,4 +47,5 @@ private:
     bool playing_=false;
     float animationTime_=0;
     quint64 generation_=0;
+    WId nativeSurface_=0;
 };

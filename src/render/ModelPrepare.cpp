@@ -12,6 +12,7 @@
 #include <assimp/Exporter.hpp>
 #include <assimp/postprocess.h>
 #include <assimp/scene.h>
+#include <assimp/material.h>
 #include <algorithm>
 #include <cmath>
 
@@ -45,7 +46,7 @@ PreparedModel prepareModel(const QString& path,const QJsonArray& bindings){
     PreparedModel result;result.resourcePath=path;QFileInfo fi(path);
     if(!fi.exists()){result.error=QStringLiteral("模型来源不存在");return result;}
     if(fi.size()>1024ll*1024*1024){result.error=QStringLiteral("模型超过单次预览 1 GiB 限制");return result;}
-    QByteArray bytes;
+    QByteArray bytes;QJsonArray dependencies;QMap<QString,QString> textureSources;
     const QString ext=fi.suffix().toLower();
     if(ext=="glb"||ext=="gltf")bytes=readFile(path);
     else{
@@ -53,6 +54,19 @@ PreparedModel prepareModel(const QString& path,const QJsonArray& bindings){
         // Native Windows paths pass through a UTF-8-aware IO adapter in newer Assimp.
         const aiScene* scene=importer.ReadFile(path.toUtf8().constData(),aiProcess_Triangulate|aiProcess_GenSmoothNormals|aiProcess_CalcTangentSpace|aiProcess_JoinIdenticalVertices|aiProcess_ValidateDataStructure);
         if(!scene){result.error=QStringLiteral("模型导入失败：")+QString::fromUtf8(importer.GetErrorString());return result;}
+        for(unsigned m=0;m<scene->mNumMaterials;++m)for(int type=1;type<=AI_TEXTURE_TYPE_MAX;++type){
+            auto textureType=static_cast<aiTextureType>(type);
+            for(unsigned t=0;t<scene->mMaterials[m]->GetTextureCount(textureType);++t){
+                aiString uri;if(scene->mMaterials[m]->GetTexture(textureType,t,&uri)!=AI_SUCCESS)continue;
+                QString name=QString::fromUtf8(uri.C_Str());if(name.isEmpty()||name.startsWith('*')||scene->GetEmbeddedTexture(uri.C_Str()))continue;
+                QString source=QDir(fi.absolutePath()).absoluteFilePath(name);
+                if(!QFileInfo::exists(source)){
+                    QString filename=QFileInfo(QDir::fromNativeSeparators(name)).fileName();
+                    for(auto candidate:{fi.dir().absoluteFilePath(filename),fi.dir().absoluteFilePath(fi.completeBaseName()+".fbm/"+filename)})if(QFileInfo::exists(candidate)){source=candidate;break;}
+                }
+                textureSources[name]=source;if(!dependencies.contains(source))dependencies.append(source);
+            }
+        }
         Assimp::Exporter exporter;const auto* blob=exporter.ExportToBlob(scene,"glb2");
         if(!blob){result.error=QStringLiteral("模型转换失败：")+QString::fromUtf8(exporter.GetErrorString());return result;}
         bytes=QByteArray(static_cast<const char*>(blob->data),qsizetype(blob->size));
@@ -106,10 +120,10 @@ PreparedModel prepareModel(const QString& path,const QJsonArray& bindings){
     }
     doc["materials"]=materials;
     // Embed relative buffers/images, so Unicode paths and sidecar resources don't depend on C file APIs.
-    for(const auto key:{"buffers","images"}){auto entries=doc[key].toArray();for(int i=0;i<entries.size();++i){auto v=entries[i].toObject();QString uri=v["uri"].toString();if(uri.isEmpty()||uri.startsWith("data:"))continue;QString source=QDir(fi.absolutePath()).filePath(QUrl::fromPercentEncoding(uri.toUtf8()));QByteArray data=readFile(source);if(data.isEmpty()){result.error=QStringLiteral("缺少模型依赖：")+source;return result;}QString mime="application/octet-stream";if(QString(key)=="images"){QString suffix=QFileInfo(source).suffix().toLower();mime=suffix=="jpg"||suffix=="jpeg"?"image/jpeg":suffix=="webp"?"image/webp":suffix=="ktx2"?"image/ktx2":"image/png";}v["uri"]="data:"+mime+";base64,"+QString::fromLatin1(data.toBase64());entries[i]=v;}doc[key]=entries;}
+    for(const auto key:{"buffers","images"}){auto entries=doc[key].toArray();for(int i=0;i<entries.size();++i){auto v=entries[i].toObject();QString uri=v["uri"].toString();if(uri.isEmpty()||uri.startsWith("data:"))continue;QString decoded=QUrl::fromPercentEncoding(uri.toUtf8());QString source=textureSources.value(decoded,QDir(fi.absolutePath()).filePath(decoded));QByteArray data=readFile(source);if(data.isEmpty()){result.error=QStringLiteral("缺少模型依赖：")+source;return result;}if(!dependencies.contains(source))dependencies.append(source);QString mime="application/octet-stream";if(QString(key)=="images"){QString suffix=QFileInfo(source).suffix().toLower();mime=suffix=="jpg"||suffix=="jpeg"?"image/jpeg":suffix=="webp"?"image/webp":suffix=="ktx2"?"image/ktx2":"image/png";}v["uri"]="data:"+mime+";base64,"+QString::fromLatin1(data.toBase64());entries[i]=v;}doc[key]=entries;}
     json=QJsonDocument(doc).toJson(QJsonDocument::Compact);
     if(glb){while(json.size()%4)json.append(' ');while(bin.size()%4)bin.append('\0');QByteArray packed;appendWord(packed,0x46546c67);appendWord(packed,2);appendWord(packed,quint32(12+8+json.size()+(bin.isEmpty()?0:8+bin.size())));appendWord(packed,quint32(json.size()));appendWord(packed,0x4e4f534a);packed+=json;if(!bin.isEmpty()){appendWord(packed,quint32(bin.size()));appendWord(packed,0x004e4942);packed+=bin;}result.bytes=packed;}
     else result.bytes=json;
-    result.metadata={{"materials",materialSlots},{"binding_issues",bindingIssues},{"material_count",materials.size()},{"mesh_count",doc["meshes"].toArray().size()},{"animation_count",doc["animations"].toArray().size()},{"format",ext},{"renderer","Filament 1.78.0 / OpenGL"}};
+    result.metadata={{"materials",materialSlots},{"dependencies",dependencies},{"binding_issues",bindingIssues},{"material_count",materials.size()},{"mesh_count",doc["meshes"].toArray().size()},{"animation_count",doc["animations"].toArray().size()},{"format",ext},{"renderer","Filament 1.78.0 / OpenGL"}};
     return result;
 }

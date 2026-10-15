@@ -21,8 +21,8 @@ RUN_BIN = ROOT / ".local/core-scale-run/bin"
 
 
 class Service:
-    def __init__(self, library):
-        self.process = subprocess.Popen([str(RUN_BIN / "imagidock-service.exe"), "--library", str(library), "--helpers", str(ROOT / "helpers"), "--python", str(ROOT / ".tools/adapters-env/Scripts/python.exe")], env=ENV, cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    def __init__(self, library, helpers=None):
+        self.process = subprocess.Popen([str(RUN_BIN / "imagidock-service.exe"), "--library", str(library), "--helpers", str(helpers or ROOT / "helpers"), "--python", str(ROOT / ".tools/adapters-env/Scripts/python.exe")], env=ENV, cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         pipe = r"\\.\pipe\imagidock-" + hashlib.sha256(library.as_posix().lower().encode()).hexdigest()[:24]
         for _ in range(200):
             if self.process.poll() is not None:

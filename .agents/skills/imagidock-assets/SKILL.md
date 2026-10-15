@@ -25,6 +25,11 @@ display data. Stable asset IDs identify records across moves and repairs.
 
 ## Related assets and model materials
 
+For a requested appearance change, `library_settings.values.theme` accepts
+`ivory` (Warm Ivory), `graphite` (Graphite), `ocean` (Ocean), or `mint` (Mint).
+Legacy `light` and `dark` remain compatible aliases. Do not change a theme as
+part of unrelated asset organization.
+
 `relation_set` replaces the **entire ordered list**. Keep unrelated entries when
 adding or removing one relation. An empty rendering role is a general reference,
 such as a weapon design drawing. A texture relation uses an explicit role:
@@ -32,8 +37,11 @@ such as a weapon design drawing. A texture relation uses an explicit role:
 Use 1-based material slots, actual model slot metadata, and at most one binding
 per role and slot. The default three slots are not a maximum. Preserve the
 specified OpenGL/DirectX normal direction; do not infer it from a generic name.
-Built-in roles cannot be renamed or deleted. Custom labels can optionally map to
-a rendering role. Preview settings never rewrite the original model.
+Built-in roles cannot be renamed, deleted or reordered. To reorder custom labels,
+call `role_list`, then `role_reorder` with all custom IDs exactly once and no built-in IDs.
+Custom labels can optionally map to a rendering role. Preserve `material_name`
+when editing bindings so changed model slots are detected. Preview settings
+never rewrite the original model.
 
 ## Preview lists and source formats
 

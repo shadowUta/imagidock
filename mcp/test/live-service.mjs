@@ -51,7 +51,19 @@ try {
   assert.equal(conflict.isError, true);
   const queried = await call('asset_list', { library_id, tags: ['无匹配', 'MCP验证'], status: 'favorite' });
   assert.equal(queried.total, 1);
-  console.log(JSON.stringify({ ok: true, library_id, job_id: started.job_id, assertions: 8, root }, null, 2));
+  const firstRole = await call('role_create', { library_id, name: '设计稿' });
+  const secondRole = await call('role_create', { library_id, name: '皮肤', render_role: 'base_color' });
+  const rolesBefore = await call('role_list', { library_id });
+  const immutableIds = rolesBefore.items.filter(role => role.builtin).map(role => role.id);
+  await call('role_reorder', { library_id, role_ids: [secondRole.id, firstRole.id] });
+  const rolesAfter = await call('role_list', { library_id });
+  assert.deepEqual(rolesAfter.items.filter(role => !role.builtin).map(role => role.id), [secondRole.id, firstRole.id]);
+  assert.deepEqual(rolesAfter.items.filter(role => role.builtin).map(role => role.id), immutableIds);
+  const invalidOrder = await client.callTool({ name: 'role_reorder', arguments: { library_id, role_ids: [immutableIds[0], secondRole.id, firstRole.id] } });
+  assert.equal(invalidOrder.isError, true);
+  const incompleteOrder = await client.callTool({ name: 'role_reorder', arguments: { library_id, role_ids: [secondRole.id] } });
+  assert.equal(incompleteOrder.isError, true);
+  console.log(JSON.stringify({ ok: true, library_id, job_id: started.job_id, assertions: 12, root }, null, 2));
 } finally {
   await client.close();
   service.kill();

@@ -46,7 +46,7 @@ test('official SDK stdio client discovers schemas and drives library pipe', asyn
   try {
     await client.connect(transport);
     const { tools } = await client.listTools();
-    assert.equal(tools.length, 35);
+    assert.equal(tools.length, 36);
     assert.ok(tools.find(tool => tool.name === 'relation_set').inputSchema.required.includes('revision'));
     assert.ok(tools.filter(tool => tool.name !== 'library_list').every(tool => tool.inputSchema.required.includes('library_id')));
     const listed = await client.callTool({ name: 'library_list', arguments: {} });
@@ -65,6 +65,24 @@ test('official SDK stdio client discovers schemas and drives library pipe', asyn
     assert.equal(calls.filter(call => call.method === 'asset.update').length, 1, 'writes are not replayed');
     const invalid = await client.callTool({ name: 'relation_set', arguments: { library_id: 'test-library', asset_id: 'asset-1', items: [] } });
     assert.equal(invalid.isError, true, 'revision is mandatory');
+    const reordered = await client.callTool({ name: 'role_reorder', arguments: { library_id: 'test-library', role_ids: ['custom-b', 'custom-a'] } });
+    assert.ok(!reordered.isError);
+    assert.deepEqual(calls.find(call => call.method === 'role.reorder').params.role_ids, ['custom-b', 'custom-a']);
+    const duplicate = await client.callTool({ name: 'role_reorder', arguments: { library_id: 'test-library', role_ids: ['custom-b', 'custom-b'] } });
+    assert.equal(duplicate.isError, true);
+    assert.equal(calls.filter(call => call.method === 'role.reorder').length, 1, 'duplicate order must not reach service');
+    const relation = await client.callTool({ name: 'relation_set', arguments: { library_id: 'test-library', asset_id: 'asset-1', revision: 3,
+      items: [{ target_id: 'texture', role: 'base_color', slot: 4, material_name: 'Material 4' }] } });
+    assert.ok(!relation.isError);
+    assert.equal(calls.find(call => call.method === 'relation.set').params.items[0].material_name, 'Material 4');
+    await client.callTool({ name: 'preview_resolve', arguments: { library_id: 'test-library', asset_id: 'texture', source_only: true } });
+    assert.equal(calls.find(call => call.method === 'preview.resolve').params.source_only, true);
+    for (const theme of ['ivory', 'graphite', 'ocean', 'mint', 'dark', 'light']) {
+      const changed = await client.callTool({ name: 'library_settings', arguments: { library_id: 'test-library', values: { theme } } });
+      assert.ok(!changed.isError, theme);
+    }
+    assert.deepEqual(calls.filter(call => call.method === 'library.settings').map(call => call.params.values.theme),
+      ['ivory', 'graphite', 'ocean', 'mint', 'dark', 'light']);
   } finally {
     await client.close();
   }

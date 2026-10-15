@@ -20,7 +20,7 @@ interface ToolSpec {
 export const specs: ToolSpec[] = [
   { name: 'library_info', method: 'library.info', description: 'Get library identity, settings, counters and revision.', shape: {}, read: true },
   { name: 'library_settings', method: 'library.settings', description: 'Update local application settings. Does not change artwork.', shape: { values: z.object({
-    theme: z.enum(['dark', 'light']).optional(), card_size: z.number().int().min(96).max(320).optional(),
+    theme: z.enum(['ivory', 'graphite', 'ocean', 'mint', 'dark', 'light']).optional(), card_size: z.number().int().min(96).max(320).optional(),
     thumb_memory_mb: z.number().int().min(32).max(4096).optional(), default_backup: z.boolean().optional(),
     cache_disk_mb: z.number().int().min(128).max(1048576).optional(),
     job_concurrency: z.number().int().min(1).max(8).optional(), blender_path: z.string().optional(), aseprite_path: z.string().optional()
@@ -44,16 +44,17 @@ export const specs: ToolSpec[] = [
   { name: 'tag_list', method: 'tag.list', description: 'List normal asset tags. These differ from material roles.', shape: {}, read: true },
   { name: 'relation_set', method: 'relation.set', description: 'Replace the complete ordered relation set using the source revision. Empty role is a reference; explicit rendering roles drive material slots (1-based). One role per slot.', shape: {
     ...changing, items: z.array(z.object({ id: id.optional(), target_id: id, label: z.string().max(256).optional(), role: optionalRole,
-      slot: z.number().int().min(1).max(1024).optional(), normal_y: z.enum(['opengl', 'directx']).optional() }).strict()).max(10_000)
+      slot: z.number().int().min(1).max(1024).optional(), normal_y: z.enum(['opengl', 'directx']).optional(), material_name: z.string().max(1024).optional() }).strict()).max(10_000)
   } },
   { name: 'role_list', method: 'role.list', description: 'List immutable built-in material roles and user-defined relation labels.', shape: {}, read: true },
   { name: 'role_create', method: 'role.create', description: 'Create a custom relation label, optionally mapped to a rendering role.', shape: { name: text, render_role: role.optional() } },
   { name: 'role_delete', method: 'role.delete', description: 'Delete a custom role. Built-in roles cannot be deleted.', shape: { role_id: id } },
+  { name: 'role_reorder', method: 'role.reorder', description: 'Reorder custom relation labels. Supply every custom role ID exactly once; built-in roles retain their fixed order and must be omitted.', shape: { role_ids: z.array(id).max(10_000).refine(values => new Set(values).size === values.length, 'Role IDs must be unique') } },
   { name: 'preview_set', method: 'preview.set', description: 'Replace the ordered preview set with revision protection. target_id links a library image; path copies a compressed external image without indexing it. Preserve existing items by id. cover_id is auto, preview id or new target id.', shape: {
     ...changing, items: z.array(z.object({ id: id.optional(), target_id: id.optional(), path: text.optional(), label: z.string().max(256).optional() }).strict()
       .refine(item => !(item.target_id && item.path) && Boolean(item.id || item.target_id || item.path), 'Use an existing id, a library target_id, or external path; target_id and path are mutually exclusive')).max(1000), cover_id: id.optional()
   } },
-  { name: 'preview_resolve', method: 'preview.resolve', description: 'Resolve a detail preview at up to 2048 pixels. Returns a cache path or background job_id.', shape: { ...asset, size: z.union([z.literal(512), z.literal(1024), z.literal(2048)]).optional(), preview_id: id.optional() } },
+  { name: 'preview_resolve', method: 'preview.resolve', description: 'Resolve a detail preview at up to 2048 pixels. source_only decodes the original asset or backup and ignores its selected cover, useful for material maps. Returns a cache path or background job_id.', shape: { ...asset, size: z.union([z.literal(512), z.literal(1024), z.literal(2048)]).optional(), preview_id: id.optional(), source_only: z.boolean().optional() } },
   { name: 'thumbnail_request', method: 'thumbnail.request', description: 'Request a cached card thumbnail; decoding is asynchronous and returns job_id when needed.', shape: { ...asset, size: z.union([z.literal(256), z.literal(512)]).optional(), priority: z.number().int().min(-100).max(100).optional() } },
   { name: 'backup_start', method: 'backup.start', description: 'Enable/disable backup intent and start background backups. Disabling keeps the last valid backup.', shape: { asset_ids: ids, enabled: z.boolean().optional() } },
   { name: 'backup_refresh', method: 'backup.refresh', description: 'Refresh asset backups and required dependencies. Previous good backups survive failure.', shape: { asset_ids: ids } },

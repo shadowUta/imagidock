@@ -6,9 +6,17 @@
 #include <QShowEvent>
 #include <QHideEvent>
 #include <QFileInfo>
+#include <QEvent>
 ModelView::ModelView(QWidget* parent):QWidget(parent){setAttribute(Qt::WA_NativeWindow);setAttribute(Qt::WA_PaintOnScreen);setAttribute(Qt::WA_NoSystemBackground);setFocusPolicy(Qt::StrongFocus);setMinimumSize(180,160);timer_.setInterval(16);connect(&timer_,&QTimer::timeout,this,&ModelView::tick);clock_.start();}
 ModelView::~ModelView(){++generation_;timer_.stop();scene_.reset();}
-void ModelView::createScene(){if(scene_)return;scene_=std::make_unique<RenderScene>(reinterpret_cast<void*>(winId()),int(width()*devicePixelRatioF()),int(height()*devicePixelRatioF()));if(!scene_->error().isEmpty()){error_=scene_->error();emit errorOccurred(error_);}if(!pending_.bytes.isEmpty()){scene_->load(pending_);pending_={};}}
+void ModelView::createScene(){if(scene_)return;nativeSurface_=winId();scene_=std::make_unique<RenderScene>(reinterpret_cast<void*>(nativeSurface_),int(width()*devicePixelRatioF()),int(height()*devicePixelRatioF()));if(!scene_->error().isEmpty()){error_=scene_->error();emit errorOccurred(error_);}if(!pending_.bytes.isEmpty()){scene_->load(pending_);pending_={};}}
+bool ModelView::event(QEvent* event){
+    if(event->type()==QEvent::WinIdChange&&scene_&&effectiveWinId()!=nativeSurface_){
+        timer_.stop();scene_.reset();nativeSurface_=0;
+        QTimer::singleShot(0,this,[this]{if(!path_.isEmpty())loadModel(path_,bindings_);if(isVisible()){createScene();timer_.start();}});
+    }
+    return QWidget::event(event);
+}
 void ModelView::loadModel(const QString& path,const QJsonArray& bindings){path_=path;bindings_=bindings;error_.clear();const auto gen=++generation_;auto* watcher=new QFutureWatcher<PreparedModel>(this);loading_=watcher;connect(watcher,&QFutureWatcher<PreparedModel>::finished,this,[this,watcher,gen]{auto prepared=watcher->result();watcher->deleteLater();if(gen!=generation_)return;loading_=nullptr;if(!prepared.error.isEmpty()){error_=prepared.error;emit errorOccurred(error_);return;}if(isVisible())createScene();if(scene_){if(!scene_->load(prepared)){error_=scene_->error();emit errorOccurred(error_);return;}}else pending_=prepared;emit modelLoaded(prepared.metadata);});watcher->setFuture(QtConcurrent::run([path,bindings]{return prepareModel(path,bindings);}));}
 void ModelView::setTextureBindings(const QJsonArray& bindings){if(!path_.isEmpty())loadModel(path_,bindings);}
 void ModelView::resetCamera(){if(scene_)scene_->resetCamera();}

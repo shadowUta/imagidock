@@ -23,6 +23,7 @@ private:
     QMutex jobsMutex_;
     QHash<QString, std::shared_ptr<std::atomic_bool>> cancellations_;
     QHash<QString, QString> thumbnailJobs_;
+    std::atomic<qint64> nextCacheSweep_{0};
     QJsonObject dispatch(const QString &, const QJsonObject &);
     QString startJob(const QString &, const QJsonObject &);
     void runJob(const QString &, const QString &, const QJsonObject &, const std::shared_ptr<std::atomic_bool> &);

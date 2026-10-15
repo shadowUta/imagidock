@@ -15,6 +15,14 @@ libsai helper and reports its embedded preview dimensions. The MIT SAI2 reader
 extracts saved composites; unsupported version tags or failures can fall back
 to a bounded JSSF thumbnail. These modes are reported separately to the UI.
 
+Model material bindings use the same decoders before calling Filament. Every
+bound image becomes a verified PNG under the disposable task cache, preserving
+the full image at up to 2048 pixels on its longest edge. PSD/PSB/SAI/SAI2 can
+therefore drive real material slots. Material names, roles and normal direction
+survive conversion. Base colour/emissive images use ICC conversion; channel/data
+maps bypass it. Missing or unreadable maps fail explicitly, and low-resolution
+SAI fallback is reported in `metadata.binding_previews` rather than hidden.
+
 `imagidock-media` uses Qt Multimedia for streaming PCM envelope generation and
 the first decoded video frame. It runs with Qt's offscreen platform and a
 110-second deadline. At most two hours of audio are sampled; the result reports
@@ -37,6 +45,7 @@ PATH, and set `QT_PLUGIN_PATH` to its `plugins` directory. Then run:
 
 ```text
 .tools/adapters-env/Scripts/python.exe tests/adapters_test.py
+.tools/adapters-env/Scripts/python.exe tests/adapters_material_test.py
 npm --prefix mcp ci --ignore-scripts --cache .cache/npm
 npm --prefix mcp test
 ```
@@ -46,6 +55,10 @@ composites, missing composites, SAI 1 encrypted thumbnail extraction, SAI2 saved
 composites and alpha, JSSF fallback, corrupt inputs, output preservation,
 waveforms, video first frames, limits and unchanged input hashes. Original
 fixtures are generated under `.local/tests`; no private artwork is committed.
+The material suite passes generated PSD, PSB, SAI1 and SAI2 files through the
+real Filament subprocess, verifies changed rendered pixels, the 2048 bound,
+preserved material-name mismatch protection, explicit missing/decode errors,
+unchanged source/binding snapshots and retention of previous successful caches.
 
 `tests/adapters_archive_smoke.py <archive> --blender <exe> --aseprite <exe>`
 selects one small PNG, WAV, GLB, Blend and Aseprite source for a read-only smoke
@@ -58,7 +71,10 @@ MCP integration checks use the official SDK client against the stdio bridge.
 The bridge verifies an explicitly configured library's identity on every call;
 updates use current revisions, and accepted writes are never automatically
 replayed. `mcp/test/live-service.mjs` performs a real C++ service import, job
-poll, query, tag/favorite edit and conflict check. For repeated development,
+poll, query, tag/favorite edit, conflict check and custom role reorder, including
+rejection of missing or built-in role IDs. There are 36 discoverable tools;
+`preview_resolve.source_only` bypasses an asset's selected cover when decoding a
+material map. For repeated development,
 copy the service to a private test-run directory before this test so linking
 the build output is not blocked. The test stops its own service when complete.
 
@@ -80,3 +96,7 @@ MCP dependency licenses and a machine-readable adapter manifest. The separate
 GPL imageio-ffmpeg executable is excluded; media previews use the application's
 Qt backend. The build validates imports using the packaged Python and starts
 the packaged Node without relying on a global Python/Node installation.
+
+After native deployment, `scripts/package-licenses.py` stages the complete
+native third-party notices and produces the corresponding-source ZIP described
+in `docs/third-party-build.md`; publish that source ZIP with the application ZIP.

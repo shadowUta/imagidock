@@ -75,14 +75,18 @@ QImage RenderScene::snapshot(){
     if(!d->engine)return {};
     for(int i=0;d->loading&&i<3000;++i){render();QThread::msleep(2);}if(d->loading){d->error="Model load timeout";return {};}
     for(int i=0;i<8;++i){render();d->engine->flushAndWait();}
-    QImage image(d->width,d->height,QImage::Format_RGBA8888);image.fill(Qt::transparent);std::atomic<bool> done=false;
-    backend::PixelBufferDescriptor pixels(image.bits(),image.sizeInBytes(),backend::PixelDataFormat::RGBA,backend::PixelDataType::UBYTE,[](void*,size_t,void* user){static_cast<std::atomic<bool>*>(user)->store(true);},&done);
+    struct Readback { QImage image;std::atomic<bool> done=false; };
+    auto readback=std::make_shared<Readback>();readback->image=QImage(d->width,d->height,QImage::Format_RGBA8888);readback->image.fill(Qt::transparent);
+    auto* callbackState=new std::shared_ptr<Readback>(readback);
+    backend::PixelBufferDescriptor pixels(readback->image.bits(),readback->image.sizeInBytes(),backend::PixelDataFormat::RGBA,backend::PixelDataType::UBYTE,[](void*,size_t,void* user){auto* state=static_cast<std::shared_ptr<Readback>*>(user);(*state)->done.store(true);delete state;},callbackState);
     if(!d->renderer->beginFrame(d->chain)){d->engine->flushAndWait();if(!d->renderer->beginFrame(d->chain))return {};}
     d->renderer->render(d->view);d->renderer->readPixels(0,0,d->width,d->height,std::move(pixels));d->renderer->endFrame();d->engine->flushAndWait();
-    for(int i=0;!done&&i<1000;++i){d->engine->pumpMessageQueues();QThread::msleep(1);}
-    // flushAndWait consumes the GPU readback before the local image/flag leave scope.
-    if(!done){d->error="Snapshot callback timeout";return {};}
-    return image.mirrored(false,true);
+    for(int i=0;!readback->done&&i<1000;++i){d->engine->pumpMessageQueues();QThread::msleep(1);}
+    // Callback owns the destination even on timeout; no driver write can outlive its memory.
+    if(!readback->done){d->error="Snapshot callback timeout";return {};}
+    // Filament normalizes readPixels to top-first client rows, including OpenGL.
+    // An additional OpenGL-style Y flip would invert every saved thumbnail.
+    return readback->image;
 }
 QString RenderScene::error()const{return d->error;}
 QJsonObject RenderScene::metadata()const{return d->metadata;}

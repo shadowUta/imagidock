@@ -17,7 +17,7 @@ import tempfile
 import time
 import warnings
 
-VERSION = "imagidock-preview-1.0.0"
+VERSION = "imagidock-preview-1.0.1"
 ROOT = Path(__file__).resolve().parent.parent
 
 
@@ -49,7 +49,7 @@ def run_tool(arguments, cwd, timeout=100, env=None):
                                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         log.seek(0, 2)
         length = log.tell()
-        log.seek(max(0, length - 4096))
+        log.seek(max(0, length - 1024 * 1024))
         message = log.read().decode("utf-8", "replace").strip()
     if completed.returncode:
         raise ValueError(f"预览工具失败 ({completed.returncode}): {message[-2000:]}")
@@ -74,7 +74,7 @@ def save_contained(image, path, size):
             "canvas_width": canvas[0], "canvas_height": canvas[1]}
 
 
-def read_image(path, max_pixels):
+def read_image(path, max_pixels, apply_icc=True):
     from PIL import Image, ImageCms
     image = Image.open(path)
     if image.width * image.height > max_pixels:
@@ -83,7 +83,7 @@ def read_image(path, max_pixels):
     image.load()
     profile = image.info.get("icc_profile")
     warning = None
-    if profile:
+    if profile and apply_icc:
         try:
             alpha = image.getchannel("A") if "A" in image.getbands() else None
             color = image.convert("RGB") if image.mode in ("RGBA", "P", "LA") else image
@@ -96,7 +96,7 @@ def read_image(path, max_pixels):
     return image, warning
 
 
-def psd_preview(path, output, size, max_pixels):
+def psd_preview(path, output, size, max_pixels, apply_icc=True):
     from psd_tools import PSDImage
     # topil uses the file's actual saved merged data. Never call composite().
     psd = PSDImage.open(path, max_alloc_bytes=768 * 1024 * 1024)
@@ -106,7 +106,7 @@ def psd_preview(path, output, size, max_pixels):
     reason = None
     if psd.width * psd.height <= max_pixels and psd.has_preview():
         try:
-            image = psd.topil(apply_icc=True)
+            image = psd.topil(apply_icc=apply_icc)
         except Exception as error:
             reason = "保存的合成画面无法读取: " + str(error)
     else:
@@ -247,6 +247,70 @@ def media_preview(path, output, size, settings, work, kind):
     raise ValueError("媒体工具未返回有效结果")
 
 
+class BindingError(ValueError):
+    def __init__(self, kind, message):
+        super().__init__(message)
+        self.kind = kind
+
+
+def prepare_material_bindings(settings, work):
+    """Supply the native renderer with verified PNGs, including PSD and SAI.
+
+    Originals and the service's binding snapshot remain untouched. The outer
+    worker's memory/time/process-tree limits also cover all nested decoders.
+    Data textures bypass ICC transforms; base colour/emission use sRGB.
+    """
+    source_list = settings.get("bindings", [])
+    if settings.get("bindings_path"):
+        source_path = Path(settings["bindings_path"])
+        if source_path.stat().st_size > 4 * 1024 * 1024:
+            raise BindingError("preview_failed", "材质绑定配置超过大小上限")
+        source_list = json.loads(source_path.read_text(encoding="utf-8-sig"))
+    if not isinstance(source_list, list) or len(source_list) > 1024:
+        raise BindingError("preview_failed", "材质绑定配置无效或数量超过上限")
+    if not source_list:
+        return None, []
+    prepared, metadata = [], []
+    max_pixels = bounded_int(settings, "preview_max_pixels", 64_000_000, 1, 64_000_000)
+    max_file = bounded_int(settings, "preview_max_file_mb", 2048, 1, 4096) * 1024 * 1024
+    for index, original in enumerate(source_list):
+        if not isinstance(original, dict):
+            raise BindingError("preview_failed", "材质绑定条目无效")
+        binding = dict(original)
+        path = Path(binding.get("path") or "").resolve()
+        context = f"槽位 {binding.get('slot', 1)} / {binding.get('role', '')} / {path.name}"
+        if not path.is_file():
+            raise BindingError("dependency_missing", "绑定贴图丢失: " + context)
+        if path.stat().st_size > max_file:
+            raise BindingError("preview_failed", "绑定贴图超过预览大小上限: " + context)
+        directory = work / f"binding-{index}"
+        directory.mkdir()
+        output = directory / "texture.png"
+        color = binding.get("role") in ("base_color", "emissive")
+        try:
+            if path.suffix.lower() in (".psd", ".psb"):
+                info = psd_preview(path, output, 2048, max_pixels, apply_icc=color)
+            elif path.suffix.lower() == ".sai":
+                info = sai1_preview(path, output, 2048, settings, directory)
+            elif path.suffix.lower() == ".sai2":
+                info = sai2_preview(path, output, 2048, settings, directory, max_pixels)
+            else:
+                image, warning = read_image(path, max_pixels, apply_icc=color)
+                info = save_contained(image, output, 2048)
+                info.update(preview_kind="image", metadata={"warning": warning} if warning else {})
+        except Exception as error:
+            raise BindingError("preview_failed", "绑定贴图解码失败: " + context + "；" + str(error)) from error
+        binding["path"] = str(output)
+        prepared.append(binding)
+        metadata.append({"target_id": binding.get("target_id", ""), "slot": binding.get("slot", 1),
+                         "role": binding.get("role", ""), "material_name": binding.get("material_name", ""),
+                         "width": info["width"], "height": info["height"],
+                         "preview_kind": info["preview_kind"], **info.get("metadata", {})})
+    target = work / "material-bindings.json"
+    target.write_text(json.dumps(prepared, ensure_ascii=False), encoding="utf-8")
+    return target, metadata
+
+
 def external_preview(path, output, size, kind, settings, work):
     from PIL import Image
     intermediate = work / "external-preview.png"
@@ -265,8 +329,10 @@ def external_preview(path, output, size, kind, settings, work):
     elif kind == "model":
         program = tool_path(settings, "model_renderer", bundled_tool("imagidock-render.exe"))
         command = [program, "--input", str(path), "--output", str(intermediate), "--size", str(size)]
-        if settings.get("bindings_path"):
-            command += ["--bindings", str(settings["bindings_path"])]
+        bindings, binding_previews = prepare_material_bindings(settings, work)
+        if bindings:
+            command += ["--bindings", str(bindings)]
+            metadata["binding_previews"] = binding_previews
         response = run_tool(command, work)
         for line in reversed(response.splitlines()):
             if line.startswith("{"):
@@ -380,7 +446,9 @@ def supervisor(args, settings):
             process.wait()
         if failure:
             raise ValueError(failure + "；可以重试或关联预览图")
-        raw = (work / "result.txt").read_bytes()[:64 * 1024]
+        if (work / "result.txt").stat().st_size > 2 * 1024 * 1024:
+            raise ValueError("解码器元数据超过大小上限")
+        raw = (work / "result.txt").read_bytes()
         try:
             result = json.loads(raw.decode("utf-8"))
         except (ValueError, UnicodeError) as error:
@@ -409,7 +477,7 @@ def main():
         emit(result)
         return 0 if result.get("ok") else 1
     except Exception as error:
-        emit({"ok": False, "error": str(error), "error_kind": "preview_decode", "decoder_version": VERSION})
+        emit({"ok": False, "error": str(error), "error_kind": getattr(error, "kind", "preview_decode"), "decoder_version": VERSION})
         return 1
 
 

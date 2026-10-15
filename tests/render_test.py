@@ -84,6 +84,23 @@ class RendererTests(unittest.TestCase):
         a=Image.open(WORK/'opengl.png').convert('RGB');b=Image.open(WORK/'directx.png').convert('RGB')
         self.assertGreater(sum(ImageStat.Stat(ImageChops.difference(a,b)).mean),.05)
 
+    def test_world_up_is_image_up(self):
+        doc=json.loads(self.model.read_text(encoding='utf-8'))
+        for i,material in enumerate(doc['materials']):
+            # The two +Y boxes must appear above the two -Y boxes.
+            material['pbrMetallicRoughness']={'baseColorFactor':[1,0,0,1] if i>=2 else [0,0,1,1],'metallicFactor':0,'roughnessFactor':1}
+        model=WORK/'方向测试.gltf';model.write_text(json.dumps(doc,ensure_ascii=False),encoding='utf-8')
+        self.render('orientation',model=model)
+        picture=Image.open(WORK/'orientation.png').convert('RGB')
+        red=[];blue=[]
+        for y in range(picture.height):
+            for x in range(picture.width):
+                r,g,b=picture.getpixel((x,y))
+                if r>60 and r>b*1.7 and r>g*1.5:red.append(y)
+                if b>60 and b>r*1.7 and b>g*1.5:blue.append(y)
+        self.assertGreater(len(red),500);self.assertGreater(len(blue),500)
+        self.assertLess(sum(red)/len(red),sum(blue)/len(blue),'Readback is vertically inverted relative to world +Y')
+
     def test_obj_unicode(self):
         model=WORK/'几何.obj';model.write_text('mtllib 材质.mtl\nv 0 1 0\nv -1 -1 1\nv 1 -1 1\nv 0 -1 -1\nusemtl blue\nf 1 2 3\nf 1 3 4\nf 1 4 2\nf 2 4 3\n',encoding='utf-8')
         (WORK/'材质.mtl').write_text('newmtl blue\nKd 0.1 0.5 0.9\n',encoding='utf-8')
