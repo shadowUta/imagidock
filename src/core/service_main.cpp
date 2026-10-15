@@ -10,6 +10,7 @@
 #include <QPointer>
 #include <QLockFile>
 #include <QTimer>
+#include <QScopedValueRollback>
 #include <cstdio>
 
 int main(int argc, char **argv) {
@@ -30,35 +31,44 @@ int main(int argc, char **argv) {
         QLocalServer server; server.setSocketOptions(QLocalServer::UserAccessOption);
         const auto name=imagidock::Library::pipeName(root);
         QLocalServer::removeServer(name);
-        if (!server.listen(name)) { std::fputs(qPrintable(server.errorString()),stderr); return 4; }
         QObject::connect(&server,&QLocalServer::newConnection,&app,[&] {
             while (auto *socket=server.nextPendingConnection()) {
                 socket->setReadBufferSize(8*1024*1024+1);
-                auto pending=std::make_shared<int>(0);
+                struct ConnectionState { int pending=0; bool reading=false; };
+                auto state=std::make_shared<ConnectionState>();
                 QObject::connect(socket,&QLocalSocket::disconnected,socket,&QObject::deleteLater);
-                QObject::connect(socket,&QLocalSocket::readyRead,socket,[socket,library,pending] {
+                const auto readRequests=[socket,library,state] {
+                    if(state->reading||socket->state()!=QLocalSocket::ConnectedState)return;
+                    QScopedValueRollback<bool> reading(state->reading,true);
                     if (socket->bytesAvailable()>8*1024*1024) { socket->disconnectFromServer(); return; }
+                    int frames=0;
                     while (socket->canReadLine()) {
+                        if(++frames>128) { socket->disconnectFromServer(); return; }
                         const auto line=socket->readLine();
-                        if (++*pending>128) { socket->disconnectFromServer(); return; }
+                        if (++state->pending>128) { socket->disconnectFromServer(); return; }
                         QJsonParseError err; const auto doc=QJsonDocument::fromJson(line,&err);
                         if(err.error!=QJsonParseError::NoError || !doc.isObject()) {
-                            socket->write("{\"error\":{\"code\":\"invalid_json\",\"message\":\"Expected JSON object\"}}\n"); --*pending; continue;
+                            socket->write("{\"error\":{\"code\":\"invalid_json\",\"message\":\"Expected JSON object\"}}\n"); --state->pending; continue;
                         }
                         QPointer<QLocalSocket> safe(socket);
                         auto *watcher=new QFutureWatcher<QJsonObject>(socket);
                         const bool shutdown=doc.object()["method"].toString()=="service.shutdown";
-                        QObject::connect(watcher,&QFutureWatcher<QJsonObject>::finished,socket,[safe,watcher,pending,shutdown] {
-                            --*pending;
-                            if(safe) safe->write(QJsonDocument(watcher->result()).toJson(QJsonDocument::Compact)+'\n');
+                        QObject::connect(watcher,&QFutureWatcher<QJsonObject>::finished,socket,[safe,watcher,state,shutdown] {
+                            --state->pending;
+                            if(safe&&safe->state()==QLocalSocket::ConnectedState) safe->write(QJsonDocument(watcher->result()).toJson(QJsonDocument::Compact)+'\n');
                             if(shutdown&&!watcher->result().contains("error"))QTimer::singleShot(100,QCoreApplication::instance(),&QCoreApplication::quit);
                             watcher->deleteLater();
                         });
                         watcher->setFuture(QtConcurrent::run([library,request=doc.object()] {return library->handle(request);}));
                     }
-                });
+                };
+                QObject::connect(socket,&QLocalSocket::readyRead,socket,readRequests);
+                // A fast client can send its first frame before nextPendingConnection
+                // returns. readyRead is edge-triggered, so consume that buffer now too.
+                readRequests();
             }
         });
+        if (!server.listen(name)) { std::fputs(qPrintable(server.errorString()),stderr); return 4; }
         const int result=app.exec();
         QThreadPool::globalInstance()->waitForDone();
         return result;
