@@ -1,0 +1,159 @@
+{
+  "schema": 1,
+  "sources": [
+    {
+      "component": "qtbase",
+      "version": "6.8.3",
+      "file": "qtbase-everywhere-src-6.8.3.tar.xz",
+      "cache_path": "sources/qtbase-everywhere-src-6.8.3.tar.xz",
+      "url": "https://download.qt.io/archive/qt/6.8/6.8.3/submodules/qtbase-everywhere-src-6.8.3.tar.xz",
+      "sha256": "56001b905601bb9023d399f3ba780d7fa940f3e4861e496a7c490331f49e0b80",
+      "verification": "SHA-256 matches official Qt archive .sha256 receipt"
+    },
+    {
+      "component": "qtmultimedia",
+      "version": "6.8.3",
+      "file": "qtmultimedia-everywhere-src-6.8.3.tar.xz",
+      "cache_path": "sources/qtmultimedia-everywhere-src-6.8.3.tar.xz",
+      "url": "https://download.qt.io/archive/qt/6.8/6.8.3/submodules/qtmultimedia-everywhere-src-6.8.3.tar.xz",
+      "sha256": "32e82307d783172a3b984cc3c47c5e4e8b819cee3cbfc702c7012c47f15f6b01",
+      "verification": "SHA-256 matches official Qt archive .sha256 receipt"
+    },
+    {
+      "component": "qtimageformats",
+      "version": "6.8.3",
+      "file": "qtimageformats-everywhere-src-6.8.3.tar.xz",
+      "cache_path": "sources/qtimageformats-everywhere-src-6.8.3.tar.xz",
+      "url": "https://download.qt.io/archive/qt/6.8/6.8.3/submodules/qtimageformats-everywhere-src-6.8.3.tar.xz",
+      "sha256": "049bfb99845e4801672aca07c3c4fc4c140f932a3a33faa899419579e33ef1c8",
+      "verification": "SHA-256 matches official Qt archive .sha256 receipt"
+    },
+    {
+      "component": "qtsvg",
+      "version": "6.8.3",
+      "file": "qtsvg-everywhere-src-6.8.3.tar.xz",
+      "cache_path": "sources/qtsvg-everywhere-src-6.8.3.tar.xz",
+      "url": "https://download.qt.io/archive/qt/6.8/6.8.3/submodules/qtsvg-everywhere-src-6.8.3.tar.xz",
+      "sha256": "35eb516460f00f264eb504baa253432384351cf23fb9980a5857190e8deef438",
+      "verification": "SHA-256 matches official Qt archive .sha256 receipt"
+    },
+    {
+      "component": "qttranslations",
+      "version": "6.8.3",
+      "file": "qttranslations-everywhere-src-6.8.3.tar.xz",
+      "cache_path": "sources/qttranslations-everywhere-src-6.8.3.tar.xz",
+      "url": "https://download.qt.io/archive/qt/6.8/6.8.3/submodules/qttranslations-everywhere-src-6.8.3.tar.xz",
+      "sha256": "c3c61d79c3d8fe316a20b3617c64673ce5b5519b2e45535f49bee313152fa531",
+      "verification": "SHA-256 matches official Qt archive .sha256 receipt"
+    },
+    {
+      "component": "filament",
+      "version": "1.78.0",
+      "file": "filament-v1.78.0.tar.gz",
+      "cache_path": "sources/filament-v1.78.0.tar.gz",
+      "url": "https://codeload.github.com/google/filament/tar.gz/refs/tags/v1.78.0",
+      "sha256": "9f4a24c123d8db83ea93bfee501cba70c240b342a0cbab12db3256fdd8f44a95",
+      "verification": "SHA-256 pinned from exact official release tag archive"
+    },
+    {
+      "component": "ffmpeg",
+      "version": "7.1",
+      "file": "FFmpeg-n7.1.tar.gz",
+      "cache_path": "sources/FFmpeg-n7.1.tar.gz",
+      "url": "https://codeload.github.com/FFmpeg/FFmpeg/tar.gz/refs/tags/n7.1",
+      "sha256": "7ddad2d992bd250a6c56053c26029f7e728bebf0f37f80cf3f8a0e6ec706431a",
+      "sha1": "f008a93710a7577e3f85a90f4b632cc615164712",
+      "verification": "Exact source archive SHA-1 matches Qt v6.8.3 provisioning script; SHA-256 also pinned"
+    },
+    {
+      "component": "libsai",
+      "version": "f07ee8878e184eeeded79a5a2ef808bc51a3a7f7",
+      "file": "libsai-f07ee887.tar.gz",
+      "cache_path": "sources/libsai-f07ee887.tar.gz",
+      "url": "https://codeload.github.com/Wunkolo/libsai/tar.gz/f07ee8878e184eeeded79a5a2ef808bc51a3a7f7",
+      "sha256": "0380c39565134c078a8cc0a36c3f9659d811d57a312e8e89c9b46ed1551cca61"
+    },
+    {
+      "component": "sai2-parser",
+      "version": "6671463ef4b5364f3db5ee9659a6015fd6c2ca0a",
+      "file": "sai2-parser-6671463e.tar.gz",
+      "cache_path": "sources/sai2-parser-6671463e.tar.gz",
+      "url": "https://codeload.github.com/mishiki/sai2-parser/tar.gz/6671463ef4b5364f3db5ee9659a6015fd6c2ca0a",
+      "sha256": "e29100a3e2333fb3153ec09bb0316d60fc298a016422d1a172d874422ba57b81"
+    },
+    {
+      "component": "assimp",
+      "version": "5.4.3",
+      "file": "assimp-v5.4.3.zip",
+      "cache_path": "sources/assimp-v5.4.3.zip",
+      "url": "https://github.com/assimp/assimp/archive/refs/tags/v5.4.3.zip",
+      "sha256": "795c29716f4ac123b403e53b677e9f32a8605c4a7b2d9904bfaae3f4053b506d"
+    },
+    {
+      "component": "zstd",
+      "version": "1.5.7",
+      "file": "zstd-1.5.7.tar.gz",
+      "cache_path": "sources/zstd-1.5.7.tar.gz",
+      "url": "https://github.com/facebook/zstd/releases/download/v1.5.7/zstd-1.5.7.tar.gz",
+      "sha256": "eb33e51f49a15e023950cd7825ca74a4a2b43db8354825ac24fc1b7ee09e6fa3"
+    },
+    {
+      "component": "sqlite",
+      "version": "3.50.4",
+      "file": "sqlite-amalgamation-3500400.zip",
+      "cache_path": "sources/sqlite-amalgamation-3500400.zip",
+      "url": "https://www.sqlite.org/2025/sqlite-amalgamation-3500400.zip",
+      "sha256": "1d3049dd0f830a025a53105fc79fd2ab9431aea99e137809d064d8ee8356b032"
+    }
+  ],
+  "receipts": [
+    {
+      "file": "qtbase-everywhere-src-6.8.3.tar.xz.sha256",
+      "cache_path": "receipts/qtbase-everywhere-src-6.8.3.tar.xz.sha256",
+      "url": "https://download.qt.io/archive/qt/6.8/6.8.3/submodules/qtbase-everywhere-src-6.8.3.tar.xz.sha256",
+      "sha256": "0576c7c6f57df11a0f4fa4875e88c08f6ae8652fa9f2cf2d7be3c421b94d927c"
+    },
+    {
+      "file": "qtmultimedia-everywhere-src-6.8.3.tar.xz.sha256",
+      "cache_path": "receipts/qtmultimedia-everywhere-src-6.8.3.tar.xz.sha256",
+      "url": "https://download.qt.io/archive/qt/6.8/6.8.3/submodules/qtmultimedia-everywhere-src-6.8.3.tar.xz.sha256",
+      "sha256": "24bc423c5d5644fa1daff627827980ec143e2860305bf6fb06950a1aee4d48d2"
+    },
+    {
+      "file": "qtimageformats-everywhere-src-6.8.3.tar.xz.sha256",
+      "cache_path": "receipts/qtimageformats-everywhere-src-6.8.3.tar.xz.sha256",
+      "url": "https://download.qt.io/archive/qt/6.8/6.8.3/submodules/qtimageformats-everywhere-src-6.8.3.tar.xz.sha256",
+      "sha256": "992f815296993a157eeab059e2094b4aed11a034e50a563ab154722c61794881"
+    },
+    {
+      "file": "qtsvg-everywhere-src-6.8.3.tar.xz.sha256",
+      "cache_path": "receipts/qtsvg-everywhere-src-6.8.3.tar.xz.sha256",
+      "url": "https://download.qt.io/archive/qt/6.8/6.8.3/submodules/qtsvg-everywhere-src-6.8.3.tar.xz.sha256",
+      "sha256": "6dbb2de297eb0e51f8c48c918aacc0fe3d87de1c2b8e19079d1905daa9f37f73"
+    },
+    {
+      "file": "qttranslations-everywhere-src-6.8.3.tar.xz.sha256",
+      "cache_path": "receipts/qttranslations-everywhere-src-6.8.3.tar.xz.sha256",
+      "url": "https://download.qt.io/archive/qt/6.8/6.8.3/submodules/qttranslations-everywhere-src-6.8.3.tar.xz.sha256",
+      "sha256": "75aeaea3d7ffbfebfba0d291ebb6d46f482ef8631e50fc35861a04f4ac1edd1c"
+    },
+    {
+      "file": "qt-install-ffmpeg.ps1",
+      "cache_path": "receipts/qt-install-ffmpeg.ps1",
+      "url": "https://raw.githubusercontent.com/qt/qt5/v6.8.3/coin/provisioning/common/windows/install-ffmpeg.ps1",
+      "sha256": "78a9f7a767e7f88b53bf2bae7df3455a0218286ad7b5d2bca237212ae7c4f733"
+    },
+    {
+      "file": "qt-ffmpeg_config_options.txt",
+      "cache_path": "receipts/qt-ffmpeg_config_options.txt",
+      "url": "https://raw.githubusercontent.com/qt/qt5/v6.8.3/coin/provisioning/common/shared/ffmpeg_config_options.txt",
+      "sha256": "e940dc2d1baae36c81caa85c05e5175d6248d8afb90e9e29ef63c8c5badec784"
+    },
+    {
+      "file": "qt-windows-helpers.ps1",
+      "cache_path": "receipts/qt-windows-helpers.ps1",
+      "url": "https://raw.githubusercontent.com/qt/qt5/v6.8.3/coin/provisioning/common/windows/helpers.ps1",
+      "sha256": "d3a4b04c6cfa8a5cd4184cd07981c03760599778bb155e7bd7953442eea4cc96"
+    }
+  ]
+}

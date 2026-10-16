@@ -20,6 +20,7 @@ public:
     void setAnimationPosition(float seconds);
     bool saveSnapshot(const QString& path);
     QString lastError() const;
+    QJsonObject diagnostics() const;
     QPaintEngine* paintEngine() const override { return nullptr; }
 signals:
     void modelLoaded(const QJsonObject& metadata);
@@ -48,4 +49,5 @@ private:
     float animationTime_=0;
     quint64 generation_=0;
     WId nativeSurface_=0;
+    quint64 tickCount_=0, renderCount_=0, showCount_=0, hideCount_=0;
 };

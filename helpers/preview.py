@@ -5,6 +5,12 @@ worker and its subprocesses. All temporary files stay beside the cache output.
 """
 from __future__ import annotations
 
+import sys
+
+# The service may launch this supervisor without Python's -B switch. Disable
+# dependency bytecode writes before any imports so a portable package stays read-only.
+sys.dont_write_bytecode = True
+
 import argparse
 import io
 import json
@@ -12,7 +18,6 @@ import os
 from pathlib import Path
 import struct
 import subprocess
-import sys
 import tempfile
 import time
 import warnings

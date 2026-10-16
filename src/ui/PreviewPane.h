@@ -3,6 +3,7 @@
 #include <QGraphicsView>
 #include <QJsonArray>
 #include <QWidget>
+#include <memory>
 class QGraphicsPixmapItem;
 class QMediaPlayer;
 class QAudioOutput;
@@ -11,6 +12,7 @@ class QSlider;
 class QStackedWidget;
 class QPushButton;
 class ModelView;
+class QAction;
 
 class ImageCanvas : public QGraphicsView {
     Q_OBJECT
@@ -43,4 +45,10 @@ private:
     void load(const QString &path,quint64 generation);
     void image(const QString &path,quint64 generation,const QString &caption);
     void renderBindings(const QString &path,quint64 generation);
+    void resolveBinding(const QString &modelPath,QJsonObject binding,quint64 generation,std::shared_ptr<QJsonArray> bindings,std::shared_ptr<int> remaining,int attempts=0);
+    void resolveTexturePreview(const QString &modelPath,QJsonObject binding,quint64 generation,std::shared_ptr<QJsonArray> bindings,std::shared_ptr<int> remaining,int attempts=0);
+    void waitBinding(const QString &jobId,const QString &modelPath,QJsonObject binding,quint64 generation,std::shared_ptr<QJsonArray> bindings,std::shared_ptr<int> remaining,int attempts);
+    void consumeBinding(const QString &modelPath,QJsonObject binding,const QString &resolved,const QString &error,quint64 generation,std::shared_ptr<QJsonArray> bindings,std::shared_ptr<int> remaining);
+    QStringList m_bindingWarnings;
+    QList<QAction*> m_imageActions,m_modelActions;
 };

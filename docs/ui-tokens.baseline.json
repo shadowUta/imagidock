@@ -1,0 +1,30 @@
+{
+  "captured_at": "2026-10-16",
+  "purpose": "Preserve the approved four glass themes before the requested UI UX Pro Max layout review.",
+  "sources": ["src/ui/Theme.cpp", "src/ui/MainWindow.cpp", "src/ui/AssetGrid.cpp", "src/ui/LibraryTab.cpp"],
+  "themes": {
+    "ivory": {"name":"暖白 · Warm Ivory","top":"#e9e3dc","bottom":"#ddd8d1","panel":[255,253,249,115],"card":[255,255,253,145],"edge":[255,255,255,210],"text":"#514b45","muted":"#8c8277","accent":"#b79576","glow":"#fffaf1","light":true},
+    "graphite": {"name":"石墨黑 · Graphite","top":"#24262b","bottom":"#171b22","panel":[216,225,240,10],"card":[225,232,247,17],"edge":[225,235,255,29],"text":"#e5e8ee","muted":"#999faa","accent":"#97acd1","glow":"#67768f","light":false},
+    "ocean": {"name":"深海蓝 · Ocean","top":"#182b46","bottom":"#10213a","panel":[116,155,207,22],"card":[143,181,233,30],"edge":[165,199,242,45],"text":"#e2eeff","muted":"#91aacb","accent":"#7bb5ff","glow":"#3f7cbf","light":false},
+    "mint": {"name":"冰青 · Mint","top":"#e2f0ef","bottom":"#cbdfe1","panel":[250,255,255,112],"card":[255,255,255,130],"edge":[255,255,255,215],"text":"#355c60","muted":"#719597","accent":"#69aca9","glow":"#efffff","light":true}
+  },
+  "semantic_colors": {
+    "brand":"#67c8b6", "brand_ink":"#132b2b", "favorite":"#edc778",
+    "danger_light":"#9f6868", "danger_dark":"#cb999f", "window_close_hover":[198,82,92,205],
+    "success":"No separate token; state also has a text label.",
+    "warning":"No separate token; state also has a text label."
+  },
+  "geometry": {
+    "initial_window":[1440,940], "minimum_window":[960,640], "window_radius":23,
+    "title_height":58, "dialog_radius":18, "panel_radius":18, "card_radius":14,
+    "control_radius":10, "tab_radius":11, "card_width_default":176,
+    "card_height_extra":58, "sidebar_width":[165,360], "inspector_width":[225,400]
+  },
+  "typography": {"families":["Microsoft YaHei UI","Segoe UI","sans-serif"],"body_px":12,"page_heading_px":23,"brand_px":14,"section_label_px":11},
+  "constraints": [
+    "Keep C++20 and Qt Widgets; do not rebuild as a web application.",
+    "Preserve these colors and the layered radial glow/glass appearance.",
+    "Preserve frameless rounded windows, transparent image backgrounds and upright model snapshots.",
+    "Improve hierarchy, spacing, keyboard focus and small-window behavior without adding product features."
+  ]
+}

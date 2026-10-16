@@ -7,6 +7,7 @@
 #include <QPixmap>
 #include <QSet>
 #include <QStyledItemDelegate>
+#include <QElapsedTimer>
 
 class ThumbnailStore : public QObject {
     Q_OBJECT
@@ -58,11 +59,13 @@ class AssetGrid : public QListView {
 public:
     explicit AssetGrid(QWidget *parent=nullptr);
     void setCardSize(int size);
+    void beginMeasurement();
+    QJsonObject timingReport() const;
 signals: void filesDropped(const QStringList &paths);
 protected:
     void dragEnterEvent(QDragEnterEvent *) override;
     void dragMoveEvent(QDragMoveEvent *) override;
     void dropEvent(QDropEvent *) override;
     void paintEvent(QPaintEvent *) override;
-private: AssetDelegate *m_delegate;
+private: AssetDelegate *m_delegate;bool m_measure=false;QElapsedTimer m_frameClock;QVector<double> m_paintSamples,m_frameSamples;
 };

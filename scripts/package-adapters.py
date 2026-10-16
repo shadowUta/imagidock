@@ -112,7 +112,7 @@ def main():
     # Keep SDK dependency license files. No compiler or local config is required.
     for name in ("package.json", "package-lock.json", "README.md", "codex-config.example.toml"):
         shutil.copy2(ROOT / "mcp" / name, destination / "mcp" / name)
-    (destination / "mcp/config.example.json").write_text(json.dumps({"libraries": [{"path": "../data/default"}],
+    (destination / "mcp/config.example.json").write_text(json.dumps({"libraries": [{"path": "../data/library"}],
         "service_path": "../imagidock-service.exe", "timeout_ms": 30000}, indent=2), encoding="utf-8")
     copy_tree(ROOT / ".agents/skills/imagidock-assets", destination / ".agents/skills/imagidock-assets")
     notices = destination / "licenses/adapters"

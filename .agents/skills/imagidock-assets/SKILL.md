@@ -23,12 +23,14 @@ display data. Stable asset IDs identify records across moves and repairs.
 - Import folders with `asset_import`. Default is indexing only. Enable backup
   when requested; do not treat indexing as copying or preservation.
 
-## Related assets and model materials
+## Appearance
 
 For a requested appearance change, `library_settings.values.theme` accepts
 `ivory` (Warm Ivory), `graphite` (Graphite), `ocean` (Ocean), or `mint` (Mint).
 Legacy `light` and `dark` remain compatible aliases. Do not change a theme as
 part of unrelated asset organization.
+
+## Related assets and model materials
 
 `relation_set` replaces the **entire ordered list**. Keep unrelated entries when
 adding or removing one relation. An empty rendering role is a general reference,

@@ -1,13 +1,13 @@
 #pragma once
 #include "AssetGrid.h"
-#include <QDialog>
+#include "GlassDialog.h"
 class QListWidget;
 class QComboBox;
 class QSpinBox;
 class QLineEdit;
 class QPushButton;
 
-class AssetPicker : public QDialog {
+class AssetPicker : public GlassDialog {
     Q_OBJECT
 public:
     AssetPicker(RpcClient *rpc,ThumbnailStore *thumbs,const QString &title,const QStringList &types={},QWidget *parent=nullptr);
@@ -15,7 +15,7 @@ public:
 private: AssetGrid *m_grid; AssetModel *m_model;
 };
 
-class OrderedEditor : public QDialog {
+class OrderedEditor : public GlassDialog {
     Q_OBJECT
 public:
     enum Mode { Relations,Previews };

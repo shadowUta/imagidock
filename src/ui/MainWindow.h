@@ -4,6 +4,7 @@
 #include <QTabBar>
 #include <QTabWidget>
 class QSystemTrayIcon;
+class QToolButton;
 
 class DetachableTabBar : public QTabBar {
     Q_OBJECT
@@ -16,7 +17,8 @@ private: QPoint m_press;int m_index=-1;
 };
 class AssetTabs : public QTabWidget {
     Q_OBJECT
-public: explicit AssetTabs(QWidget *p=nullptr):QTabWidget(p){bar=new DetachableTabBar;setTabBar(bar);setTabsClosable(true);setMovable(true);setDocumentMode(true);}DetachableTabBar *bar;
+public: explicit AssetTabs(QWidget *p=nullptr);DetachableTabBar *bar;
+protected: void tabInserted(int index) override;
 };
 
 class MainWindow : public QMainWindow {
@@ -25,13 +27,22 @@ public:
     MainWindow(RpcClient *rpc,ThumbnailStore *thumbs,QWidget *parent=nullptr);
     LibraryTab *addTab(const QJsonObject &state={});
     LibraryTab *currentTab()const;
-    static void applyTheme(bool light);
+    void moveCurrentTabTo(MainWindow *target);
+    static void applyTheme(const QString &theme);
     void showJobs();void showIssues();void showSettings();
 protected: void closeEvent(QCloseEvent *) override;
+    void paintEvent(QPaintEvent *) override;
+    void resizeEvent(QResizeEvent *) override;
+    void changeEvent(QEvent *) override;
+    bool nativeEvent(const QByteArray &,void *,qintptr *) override;
 private:
     RpcClient *m_rpc;ThumbnailStore *m_thumbs;AssetTabs *m_tabs;QSystemTrayIcon *m_tray;
     QPointer<QDialog> m_jobs,m_issues;bool m_exit=false;int m_activeJobs=0;
     void bindTab(LibraryTab *tab);void receiveTab(const QString &token);void detach(int index,const QPoint &position);
     void exportLibrary();void importLibrary();void openLibrary();void manageRoles();
     void exitApplication();
+    QPixmap m_glassBackground;QString m_backgroundTheme;
+    QWidget *m_titleBar=nullptr;QToolButton *m_maximize=nullptr;
+    QRect m_normalBeforeMaximize;
+    void updateWindowShape();
 };

@@ -7,9 +7,11 @@
 #include <QHideEvent>
 #include <QFileInfo>
 #include <QEvent>
-ModelView::ModelView(QWidget* parent):QWidget(parent){setAttribute(Qt::WA_NativeWindow);setAttribute(Qt::WA_PaintOnScreen);setAttribute(Qt::WA_NoSystemBackground);setFocusPolicy(Qt::StrongFocus);setMinimumSize(180,160);timer_.setInterval(16);connect(&timer_,&QTimer::timeout,this,&ModelView::tick);clock_.start();}
+// Filament's WGL backend retains its HDC for the swap chain lifetime. Give the
+// native child a private DC so Qt's backing-store painting cannot reuse it.
+ModelView::ModelView(QWidget* parent):QWidget(parent,Qt::MSWindowsOwnDC){setAttribute(Qt::WA_NativeWindow);setAttribute(Qt::WA_PaintOnScreen);setAttribute(Qt::WA_NoSystemBackground);setFocusPolicy(Qt::StrongFocus);setMinimumSize(180,160);timer_.setInterval(16);connect(&timer_,&QTimer::timeout,this,&ModelView::tick);clock_.start();}
 ModelView::~ModelView(){++generation_;timer_.stop();scene_.reset();}
-void ModelView::createScene(){if(scene_)return;nativeSurface_=winId();scene_=std::make_unique<RenderScene>(reinterpret_cast<void*>(nativeSurface_),int(width()*devicePixelRatioF()),int(height()*devicePixelRatioF()));if(!scene_->error().isEmpty()){error_=scene_->error();emit errorOccurred(error_);}if(!pending_.bytes.isEmpty()){scene_->load(pending_);pending_={};}}
+void ModelView::createScene(){if(scene_)return;nativeSurface_=winId();scene_=std::make_unique<RenderScene>(reinterpret_cast<void*>(nativeSurface_),qRound(width()*devicePixelRatioF()),qRound(height()*devicePixelRatioF()));if(!scene_->error().isEmpty()){error_=scene_->error();emit errorOccurred(error_);}if(!pending_.bytes.isEmpty()){scene_->load(pending_);pending_={};}}
 bool ModelView::event(QEvent* event){
     if(event->type()==QEvent::WinIdChange&&scene_&&effectiveWinId()!=nativeSurface_){
         timer_.stop();scene_.reset();nativeSurface_=0;
@@ -24,10 +26,11 @@ void ModelView::setAnimationPlaying(bool playing){playing_=playing;clock_.restar
 void ModelView::setAnimationPosition(float seconds){animationTime_=seconds;if(scene_)scene_->animate(seconds);}
 bool ModelView::saveSnapshot(const QString& path){if(!scene_)return false;return scene_->snapshot().save(path,"PNG");}
 QString ModelView::lastError()const{return error_;}
-void ModelView::showEvent(QShowEvent* e){QWidget::showEvent(e);createScene();clock_.restart();timer_.start();}
-void ModelView::hideEvent(QHideEvent* e){timer_.stop();QWidget::hideEvent(e);}
-void ModelView::resizeEvent(QResizeEvent* e){QWidget::resizeEvent(e);if(scene_)scene_->resize(int(width()*devicePixelRatioF()),int(height()*devicePixelRatioF()));}
+QJsonObject ModelView::diagnostics()const{return {{"timer_active",timer_.isActive()},{"timer_ticks",qint64(tickCount_)},{"render_calls",qint64(renderCount_)},{"show_events",qint64(showCount_)},{"hide_events",qint64(hideCount_)},{"scene_exists",bool(scene_)},{"loading",loading_!=nullptr},{"visible",isVisible()},{"hidden",isHidden()},{"native_surface",qint64(nativeSurface_)},{"effective_win_id",qint64(effectiveWinId())}};}
+void ModelView::showEvent(QShowEvent* e){++showCount_;QWidget::showEvent(e);createScene();clock_.restart();timer_.start();}
+void ModelView::hideEvent(QHideEvent* e){++hideCount_;timer_.stop();QWidget::hideEvent(e);}
+void ModelView::resizeEvent(QResizeEvent* e){QWidget::resizeEvent(e);if(scene_)scene_->resize(qRound(width()*devicePixelRatioF()),qRound(height()*devicePixelRatioF()));}
 void ModelView::mousePressEvent(QMouseEvent* e){lastMouse_=e->pos();setFocus();}
 void ModelView::mouseMoveEvent(QMouseEvent* e){if(!scene_)return;QPoint delta=e->pos()-lastMouse_;lastMouse_=e->pos();if(e->buttons()&Qt::LeftButton)scene_->orbit(delta.x(),delta.y());else if(e->buttons()&(Qt::RightButton|Qt::MiddleButton))scene_->pan(delta.x(),delta.y());}
 void ModelView::wheelEvent(QWheelEvent* e){if(scene_)scene_->zoom(e->angleDelta().y());e->accept();}
-void ModelView::tick(){if(!scene_||!isVisible())return;const qint64 ms=clock_.restart();if(playing_){animationTime_+=float(ms)/1000.f;scene_->animate(animationTime_);}scene_->render();}
+void ModelView::tick(){++tickCount_;if(!scene_||!isVisible())return;++renderCount_;const qint64 ms=clock_.restart();if(playing_){animationTime_+=float(ms)/1000.f;scene_->animate(animationTime_);}scene_->render();}

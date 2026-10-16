@@ -1,0 +1,16 @@
+#include "UiBenchmark.h"
+#include <QApplication>
+#include <QDir>
+#include <QElapsedTimer>
+#include <QFileInfo>
+#include <QJsonDocument>
+#include <QSaveFile>
+#include <QScrollBar>
+#include <QScreen>
+#include <QTimer>
+#include <memory>
+
+void runUiBenchmark(MainWindow *window,RpcClient *rpc,const QString &reportPath,const QString &screenshotPath){
+    window->resize(1920,1080);auto grid=window->currentTab()->findChild<AssetGrid*>();auto model=qobject_cast<AssetModel*>(grid->model());auto started=std::make_shared<QElapsedTimer>();started->start();auto report=std::make_shared<QJsonObject>();(*report)["scope"]=QStringLiteral("Qt widget paint CPU and paint-event intervals under scripted scrolling; not GPU present time or end-to-end display FPS. First screen includes IPC first page and thumbnail decode into QPixmap.");auto readiness=new QTimer(window);readiness->setInterval(5);auto frames=std::make_shared<int>(0);auto firstDone=std::make_shared<bool>(false);
+    QObject::connect(readiness,&QTimer::timeout,window,[=]{if(*firstDone)return;const int columns=qMax(1,grid->viewport()->width()/grid->gridSize().width()),visible=qMin(model->rowCount(),columns*(grid->viewport()->height()/grid->gridSize().height()+1));bool ready=visible>0;for(int row=0;ready&&row<visible;++row)ready=!model->index(row).data(Qt::DecorationRole).value<QPixmap>().isNull();if(!ready&&started->elapsed()<60000)return;*firstDone=true;readiness->stop();(*report)["first_screen_ms"]=started->nsecsElapsed()/1000000.;(*report)["first_screen_ready"]=ready;(*report)["first_screen_cards"]=visible;(*report)["records"]=model->total();(*report)["viewport_width"]=grid->viewport()->width();(*report)["viewport_height"]=grid->viewport()->height();(*report)["device_pixel_ratio"]=window->devicePixelRatioF();(*report)["window_logical_size"]=QJsonArray{window->width(),window->height()};(*report)["window_physical_size"]=QJsonArray{qRound(window->width()*window->devicePixelRatioF()),qRound(window->height()*window->devicePixelRatioF())};(*report)["screen_available"]=QJsonArray{window->screen()->availableGeometry().width(),window->screen()->availableGeometry().height()};grid->beginMeasurement();auto scroll=new QTimer(window);scroll->setTimerType(Qt::PreciseTimer);scroll->setInterval(16);QObject::connect(scroll,&QTimer::timeout,window,[=]{auto bar=grid->verticalScrollBar();if(bar->value()+64>=bar->maximum()&&model->canFetchMore({}))model->fetchMore();if(bar->maximum()>0)bar->setValue((bar->value()+48)%(bar->maximum()+1));else grid->viewport()->update();if(++*frames<600)return;scroll->stop();auto result=grid->timingReport();for(auto it=result.begin();it!=result.end();++it)(*report)[it.key()]=it.value();(*report)["scroll_ticks"]=*frames;(*report)["loaded_records_after_scroll"]=model->rowCount();QDir().mkpath(QFileInfo(reportPath).absolutePath());QSaveFile file(reportPath);if(file.open(QIODevice::WriteOnly)){file.write(QJsonDocument(*report).toJson());file.commit();}if(!screenshotPath.isEmpty()){QDir().mkpath(QFileInfo(screenshotPath).absolutePath());window->grab().save(screenshotPath);}rpc->call("service.shutdown",{{"cancel_jobs",true}},window,[](const QJsonObject &,const QString &){qApp->quit();});QTimer::singleShot(3000,qApp,&QApplication::quit);});scroll->start();});readiness->start();
+}
