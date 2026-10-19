@@ -1,4 +1,8 @@
 #include "DesktopCapture.h"
+#include <QCoreApplication>
+#include <QElapsedTimer>
+#include <QEventLoop>
+#include <QScopedValueRollback>
 
 #ifdef Q_OS_WIN
 #ifndef NOMINMAX
@@ -39,6 +43,12 @@ QImage captureDesktopRegion(const QRect &physicalBounds,QString &error)
 {
     error.clear();
 #ifdef Q_OS_WIN
+    static thread_local bool capturing=false;
+    if(capturing){
+        error=QStringLiteral("desktop_capture: recursive capture is not supported");
+        return {};
+    }
+    QScopedValueRollback<bool> captureGuard(capturing,true);
     if(physicalBounds.isEmpty()){
         error=QStringLiteral("desktop_capture: empty physical capture bounds");
         return {};
@@ -104,8 +114,17 @@ QImage captureDesktopRegion(const QRect &physicalBounds,QString &error)
 
     DXGI_OUTDUPL_FRAME_INFO frameInfo{};
     ComPtr<IDXGIResource> desktopResource;
-    result=duplication->AcquireNextFrame(500,&frameInfo,desktopResource.GetAddressOf());
-    if(FAILED(result)){error=failure("AcquireNextFrame (500 ms limit)",result);return {};}
+    // Duplication supplies desktop updates. A single long wait on the UI thread
+    // would also prevent this test window's timers and native renderer from
+    // producing those updates. Bound the retry budget while allowing drawing;
+    // user input and socket notifier events stay queued until capture finishes.
+    QElapsedTimer deadline;
+    deadline.start();
+    do {
+        QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents|QEventLoop::ExcludeSocketNotifiers,5);
+        result=duplication->AcquireNextFrame(10,&frameInfo,desktopResource.GetAddressOf());
+    } while(result==DXGI_ERROR_WAIT_TIMEOUT&&deadline.elapsed()<500);
+    if(FAILED(result)){error=failure("AcquireNextFrame (500 ms retry budget)",result);return {};}
     AcquiredFrame frame{duplication.Get()};
 
     ComPtr<ID3D11Texture2D> desktopTexture;

@@ -1,11 +1,25 @@
 #include "UiSelfTest.h"
 #include "ApplicationCapture.h"
 #include "GlassDialog.h"
+#include "GlassDialogs.h"
+#include "AssetDialogs.h"
 #include "PreviewPane.h"
 #include "UiIcons.h"
 #include "UiMetrics.h"
 #include <QAbstractButton>
 #include <QLayout>
+#include <QAction>
+#include <QDialogButtonBox>
+#include <QFile>
+#include <QFileDialog>
+#include <QDateTime>
+#include <QCryptographicHash>
+#include <QListWidget>
+#include <QTreeWidget>
+#include <QTreeWidgetItemIterator>
+#include <QMessageBox>
+#include <QMenu>
+#include <QTableWidget>
 #include <QComboBox>
 #include <QLabel>
 #include <QMenuBar>
@@ -37,7 +51,7 @@
 
 namespace {
 struct State : public QObject {
-    QPointer<MainWindow> window,second,detachedWindow;RpcClient *rpc;QString report,screenshot,modelId,imageId,normalId;QPointer<QWidget> dialogOrigin;QJsonArray assertions,captureWarnings,nativePresentations,windowStatesReport,layoutDiagnostics;QRect initialGeometry;QIcon folderIcon=uiIcon("folder");bool desktopValidation,done=false;int attempts=0;
+    QPointer<MainWindow> window,second,detachedWindow;RpcClient *rpc;QString report,screenshot,modelId,imageId,normalId,fixtureDirectory,fixtureRootId;QJsonObject originalFilterSession;QPointer<QWidget> dialogOrigin;QJsonArray assertions,captureWarnings,nativePresentations,windowStatesReport,layoutDiagnostics;QRect initialGeometry;QIcon folderIcon=uiIcon("folder");bool desktopValidation,done=false;int attempts=0;
     State(MainWindow *w,RpcClient *r,const QString &p,const QString &s,bool desktop):QObject(qApp),window(w),rpc(r),report(p),screenshot(s),desktopValidation(desktop){}
     ApplicationCapture captureWidget(QWidget *widget){
         if(desktopValidation)return captureApplicationWidget(widget);
@@ -48,20 +62,38 @@ struct State : public QObject {
         return {raster,{}};
     }
     bool check(const QString &name,bool passed){assertions.append(QJsonObject{{"name",name},{"passed",passed}});if(!passed)finish(false,name);return passed;}
-    void finish(bool ok,const QString &message={}){if(done)return;done=true;if(window&&!screenshot.isEmpty()){QDir().mkpath(QFileInfo(screenshot).absolutePath());const auto capture=captureWidget(window);if(capture.error.isEmpty())capture.image.save(screenshot);else captureWarnings.append(capture.error);}if(!report.isEmpty()){QDir().mkpath(QFileInfo(report).absolutePath());QSaveFile out(report);if(out.open(QIODevice::WriteOnly)){out.write(QJsonDocument(QJsonObject{{"ok",ok},{"message",message},{"desktop_validation",desktopValidation},{"scope",desktopValidation?"strict: functional checks, framebuffer readback and guarded desktop presentation comparison":"functional-only: Qt raster layout/input and framebuffer readback; no desktop presentation evidence"},{"assertions",assertions},{"capture_warnings",captureWarnings},{"native_presentations",nativePresentations},{"window_states",windowStatesReport},{"layout_diagnostics",layoutDiagnostics},{"library",rpc->libraryPath()},{"device_pixel_ratio",window?window->devicePixelRatioF():0.},{"screen_available",window?QJsonArray{window->screen()->availableGeometry().width(),window->screen()->availableGeometry().height()}:QJsonArray{}}}).toJson());out.commit();}}if(second)second->close();rpc->call("service.shutdown",{{"cancel_jobs",true}},this,[ok](const QJsonObject &,const QString &){qApp->exit(ok?0:2);});QTimer::singleShot(3500,qApp,[ok]{qApp->exit(ok?0:2);});}
+    void finish(bool ok,const QString &message={}){
+        if(done)return;done=true;
+        if(window&&!screenshot.isEmpty()){QDir().mkpath(QFileInfo(screenshot).absolutePath());const auto capture=captureWidget(window);if(capture.error.isEmpty())capture.image.save(screenshot);else captureWarnings.append(capture.error);}
+        int passed=0,skippedDesktop=0;for(const auto &value:assertions)passed+=value.toObject()["passed"].toBool()?1:0;for(const auto &value:nativePresentations)skippedDesktop+=value.toObject()["skipped"].toBool()?1:0;
+        if(!report.isEmpty()){QDir().mkpath(QFileInfo(report).absolutePath());QSaveFile out(report);if(out.open(QIODevice::WriteOnly)){
+            out.write(QJsonDocument(QJsonObject{{"ok",ok},{"message",message},{"desktop_validation",desktopValidation},{"scope",desktopValidation?"strict: functional checks, framebuffer readback and guarded desktop presentation comparison":"functional-only: Qt raster layout/input and framebuffer readback; no desktop presentation evidence"},{"assertion_count",assertions.size()},{"passed_assertion_count",passed},{"failed_assertion_count",assertions.size()-passed},{"skipped_desktop_presentation_count",skippedDesktop},{"assertions",assertions},{"capture_warnings",captureWarnings},{"native_presentations",nativePresentations},{"window_states",windowStatesReport},{"layout_diagnostics",layoutDiagnostics},{"library",rpc->libraryPath()},{"device_pixel_ratio",window?window->devicePixelRatioF():0.},{"screen_available",window?QJsonArray{window->screen()->availableGeometry().width(),window->screen()->availableGeometry().height()}:QJsonArray{}}}).toJson());out.commit();
+        }}
+        if(second)second->close();rpc->call("service.shutdown",{{"cancel_jobs",true}},this,[ok](const QJsonObject &,const QString &){qApp->exit(ok?0:2);});QTimer::singleShot(3500,qApp,[ok]{qApp->exit(ok?0:2);});
+    }
     void call(const QString &method,const QJsonObject &params,std::function<void(const QJsonObject&)> next){rpc->call(method,params,this,[this,method,next](const QJsonObject &r,const QString &err){if(done)return;if(!err.isEmpty()){finish(false,method+": "+err);return;}next(r);});}
     void awaitJob(const QString &id,std::function<void()> next){if(done)return;if(++attempts>300){finish(false,"job timeout");return;}call("job.get",{{"job_id",id}},[this,id,next](const QJsonObject &job){const auto state=job["state"].toString();if(state=="completed"){attempts=0;next();}else if(state=="failed"||state=="cancelled"||state=="interrupted")finish(false,job["error"].toString());else QTimer::singleShot(150,this,[this,id,next]{awaitJob(id,next);});});}
     QString fixtures(){const QString directory=QFileInfo(rpc->libraryPath()).absolutePath()+"/ui-fixtures";QDir().mkpath(directory);QImage color(320,240,QImage::Format_RGBA8888);color.fill(QColor("#67c8b6"));{QPainter p(&color);p.setPen(Qt::NoPen);p.setBrush(QColor("#ffe0a6"));p.drawEllipse(80,30,160,160);p.setPen(QColor("#102927"));p.drawText(color.rect(),Qt::AlignCenter,"ImagiDock UI");}color.save(directory+"/UI color.png");QImage normal(64,64,QImage::Format_RGBA8888);normal.fill(QColor(128,128,255));normal.save(directory+"/UI normal.png");
         QByteArray bytes;QDataStream stream(&bytes,QIODevice::WriteOnly);stream.setByteOrder(QDataStream::LittleEndian);stream.setFloatingPointPrecision(QDataStream::SinglePrecision);for(int i=0;i<4;++i){const float x=float(i%2)*1.3f-.65f,z=float(i/2)*1.3f-.65f;for(float v:{x-.5f,0.f,z-.5f,x+.5f,0.f,z-.5f,x,0.f,z+.5f})stream<<v;}for(int i=0;i<4;++i)for(quint16 v:{quint16(0),quint16(1),quint16(2)})stream<<v;
         QJsonArray views,accessors,primitives,materials;for(int i=0;i<4;++i){views.append(QJsonObject{{"buffer",0},{"byteOffset",i*36},{"byteLength",36},{"target",34962}});views.append(QJsonObject{{"buffer",0},{"byteOffset",144+i*6},{"byteLength",6},{"target",34963}});const double x=(i%2)*1.3-.65,z=(i/2)*1.3-.65;accessors.append(QJsonObject{{"bufferView",i*2},{"componentType",5126},{"count",3},{"type","VEC3"},{"min",QJsonArray{x-.5,0.,z-.5}},{"max",QJsonArray{x+.5,0.,z+.5}}});accessors.append(QJsonObject{{"bufferView",i*2+1},{"componentType",5123},{"count",3},{"type","SCALAR"}});primitives.append(QJsonObject{{"attributes",QJsonObject{{"POSITION",i*2}}},{"indices",i*2+1},{"material",i}});materials.append(QJsonObject{{"name",QString("UI slot %1").arg(i+1)},{"doubleSided",true},{"pbrMetallicRoughness",QJsonObject{{"baseColorFactor",QJsonArray{.2+i*.2,.8-i*.15,.6,1.}},{"roughnessFactor",.65},{"metallicFactor",0.}}}});}
-        QJsonObject gltf{{"asset",QJsonObject{{"version","2.0"},{"generator","ImagiDock UI self test"}}},{"buffers",QJsonArray{QJsonObject{{"uri","data:application/octet-stream;base64,"+QString::fromLatin1(bytes.toBase64())},{"byteLength",bytes.size()}}}},{"bufferViews",views},{"accessors",accessors},{"materials",materials},{"meshes",QJsonArray{QJsonObject{{"primitives",primitives}}}},{"nodes",QJsonArray{QJsonObject{{"mesh",0}}}},{"scenes",QJsonArray{QJsonObject{{"nodes",QJsonArray{0}}}}},{"scene",0}};QSaveFile file(directory+"/UI four slots.gltf");if(file.open(QIODevice::WriteOnly)){file.write(QJsonDocument(gltf).toJson());file.commit();}return directory;
+        QJsonObject gltf{{"asset",QJsonObject{{"version","2.0"},{"generator","ImagiDock UI self test"}}},{"buffers",QJsonArray{QJsonObject{{"uri","data:application/octet-stream;base64,"+QString::fromLatin1(bytes.toBase64())},{"byteLength",bytes.size()}}}},{"bufferViews",views},{"accessors",accessors},{"materials",materials},{"meshes",QJsonArray{QJsonObject{{"primitives",primitives}}}},{"nodes",QJsonArray{QJsonObject{{"mesh",0}}}},{"scenes",QJsonArray{QJsonObject{{"nodes",QJsonArray{0}}}}},{"scene",0}};QSaveFile file(directory+"/UI four slots.gltf");if(file.open(QIODevice::WriteOnly)){file.write(QJsonDocument(gltf).toJson());file.commit();}
+        // Distinct source mtimes make the modified UI sort observable, independent of import order.
+        const QStringList names{"UI four slots.gltf","UI color.png","UI normal.png"};
+        for(int i=0;i<names.size();++i){QFile source(directory+"/"+names[i]);if(source.open(QIODevice::ReadWrite))source.setFileTime(QDateTime::fromMSecsSinceEpoch(1700000000000LL+i*60000,Qt::UTC),QFileDevice::FileModificationTime);}
+        return directory;
     }
     void start(){initialGeometry=window->geometry();recordWindowState("initial");foreground(window);if(!check("frameless_window_flag",window->windowFlags().testFlag(Qt::FramelessWindowHint)))return;
 #ifdef Q_OS_WIN
 const auto handle=reinterpret_cast<HWND>(window->winId());RECT rectangle{};GetWindowRect(handle,&rectangle);const auto region=CreateRectRgn(0,0,0,0);const bool rounded=GetWindowRgn(handle,region)!=ERROR&&!PtInRegion(region,0,0);DeleteObject(region);if(!check("native_window_has_round_region",rounded))return;const auto edge=SendMessage(handle,WM_NCHITTEST,0,MAKELPARAM(rectangle.left+2,(rectangle.top+rectangle.bottom)/2));const auto brand=window->findChild<QLabel*>("windowBrand");const auto brandLocal=brand->mapTo(window,brand->rect().center());POINT brandPoint{qRound(brandLocal.x()*window->devicePixelRatioF()),qRound(brandLocal.y()*window->devicePixelRatioF())};ClientToScreen(handle,&brandPoint);const auto caption=SendMessage(handle,WM_NCHITTEST,0,MAKELPARAM(brandPoint.x,brandPoint.y));if(!check("native_resize_and_caption_hit_regions",edge==HTLEFT&&caption==HTCAPTION))return;
 #endif
 if(!chromeHitRegions())return;
-call("library.info",{},[this](const QJsonObject &r){if(!check("dedicated_empty_library",r["counts"].toObject()["all"].toInt()==0))return;const QString path=fixtures();call("asset.import",{{"paths",QJsonArray{path}},{"backup",false}},[this](const QJsonObject &r){awaitJob(r["job_id"].toString(),[this]{loaded();});});});}
+call("library.info",{},[this](const QJsonObject &r){if(!check("dedicated_empty_library",r["counts"].toObject()["all"].toInt()==0))return;fixtureDirectory=fixtures();call("directory.create",{{"name","ui-fixtures"}},[this](const QJsonObject &directory){fixtureRootId=directory["id"].toString();if(!check("isolated_fixture_directory_created",!fixtureRootId.isEmpty()))return;importFixture(0);});});}
+    void importFixture(int at){
+        // Separate accepted import jobs provide a known imported DESC order without reading the DB.
+        const QStringList names{"UI color.png","UI normal.png","UI four slots.gltf"};
+        if(at>=names.size()){loaded();return;}
+        call("asset.import",{{"paths",QJsonArray{fixtureDirectory+"/"+names[at]}},{"directory_id",fixtureRootId},{"backup",false}},[this,at](const QJsonObject &r){awaitJob(r["job_id"].toString(),[this,at]{QTimer::singleShot(250,this,[this,at]{importFixture(at+1);});});});
+    }
     bool chromeHitRegions(){
         auto selector=window->findChild<QComboBox*>("headerTheme");
         if(!check("header_exposes_four_existing_themes",selector&&selector->count()==4&&selector->itemData(0)=="ivory"&&selector->itemData(1)=="graphite"&&selector->itemData(2)=="ocean"&&selector->itemData(3)=="mint"))return false;
@@ -142,7 +174,55 @@ call("library.info",{},[this](const QJsonObject &r){if(!check("dedicated_empty_l
         return check(QString("filter_controls_reachable_at_sidebar_limits_%1").arg(width),reachable);
     }
     void loaded(){call("asset.list",{{"limit",100}},[this](const QJsonObject &r){if(!check("import_three_ui_fixtures",r["total"].toInt()==3))return;for(const auto &v:r["items"].toArray()){const auto a=v.toObject();if(a["type"]=="model")modelId=a["id"].toString();else if(a["name"]=="UI color.png")imageId=a["id"].toString();else normalId=a["id"].toString();}if(!check("stable_ids_present",!modelId.isEmpty()&&!imageId.isEmpty()&&!normalId.isEmpty()))return;call("asset.get",{{"asset_id",modelId}},[this](const QJsonObject &a){QJsonArray bindings;for(int slot=1;slot<=4;++slot)bindings.append(QJsonObject{{"target_id",imageId},{"label",QString("base_color_%1").arg(slot)},{"role","base_color"},{"slot",slot}});call("relation.set",{{"asset_id",modelId},{"revision",a["revision"]},{"items",bindings}},[this](const QJsonObject &model){if(!check("four_material_slots_saved",model["relations"].toArray().size()==4))return;call("asset.get",{{"asset_id",imageId}},[this](const QJsonObject &a){call("asset.update",{{"asset_id",imageId},{"revision",a["revision"]},{"values",QJsonObject{{"tags",QJsonArray{"ui-test","color"}},{"favorite",true}}}},[this](const QJsonObject &){filter();});});});});});}
-    void filter(){call("asset.list",{{"types",QJsonArray{"image","video"}},{"tags",QJsonArray{"ui-test","does-not-exist"}},{"status","favorite"}},[this](const QJsonObject &r){if(!check("filter_or_within_and_across",r["total"].toInt()==1&&r["items"].toArray()[0].toObject()["id"]==imageId))return;auto tab=window->currentTab();tab->openAsset(modelId);QTimer::singleShot(1500,this,[this]{windowStates();});});}
+    void filter(){call("asset.list",{{"types",QJsonArray{"image","video"}},{"tags",QJsonArray{"ui-test","does-not-exist"}},{"status","favorite"}},[this](const QJsonObject &r){if(!check("filter_or_within_and_across",r["total"].toInt()==1&&r["items"].toArray()[0].toObject()["id"]==imageId))return;
+        call("asset.get",{{"asset_id",normalId}},[this](const QJsonObject &normal){call("asset.update",{{"asset_id",normalId},{"revision",normal["revision"]},{"values",QJsonObject{{"tags",QJsonArray{"ui-test-normal"}}}}},[this](const QJsonObject &){originalFilterSession=window->currentTab()->session();rpc->refresh();attempts=0;waitForFilterNavigation();});});
+    });}
+    template<class T> T *accessibleControl(const QString &name){for(auto control:window->currentTab()->findChildren<T*>())if(control->accessibleName()==name)return control;return nullptr;}
+    void waitForFilterNavigation(){
+        if(done)return;auto tags=accessibleControl<QListWidget>(QString::fromUtf8("标签筛选，多选取并集"));auto dirs=accessibleControl<QTreeWidget>(QString::fromUtf8("库内目录筛选"));
+        bool tagReady=false,dirReady=false;
+        if(tags)for(int i=0;i<tags->count();++i)tagReady|=tags->item(i)->text()=="ui-test-normal";
+        if(dirs)for(QTreeWidgetItemIterator it(dirs);*it;++it)dirReady|=(*it)->data(0,Qt::UserRole).toString()==fixtureRootId;
+        if(tagReady&&dirReady){attempts=0;filterStep(0);return;}
+        if(++attempts>80){finish(false,"UI filter navigation did not receive fixture metadata");return;}
+        QTimer::singleShot(100,this,[this]{waitForFilterNavigation();});
+    }
+    void expectModelRows(const QString &name,const QStringList &expected,bool ordered,std::function<void()> action,std::function<void()> next){
+        auto grid=window->currentTab()->findChild<AssetGrid*>();auto model=grid?qobject_cast<AssetModel*>(grid->model()):nullptr;
+        if(!check(name+"_has_live_asset_model",model!=nullptr))return;
+        auto guard=new QObject(this);auto accepted=std::make_shared<bool>(false);
+        connect(model,&AssetModel::loaded,guard,[this,guard,model,name,expected,ordered,next,accepted](int count,int total){
+            if(done||*accepted)return;*accepted=true;QStringList actual;for(int row=0;row<model->rowCount();++row)actual<<model->asset(row)["id"].toString();
+            auto wanted=expected;if(!ordered){actual.sort();wanted.sort();}
+            layoutDiagnostics.append(QJsonObject{{"name",name},{"scope","actual AssetModel::loaded after UI controls"},{"expected_ids",QJsonArray::fromStringList(wanted)},{"model_ids",QJsonArray::fromStringList(actual)},{"loaded_count",count},{"total",total},{"filter",window->currentTab()->session()["filter"]}});
+            guard->deleteLater();if(!check(name,count==expected.size()&&total==expected.size()&&actual==wanted))return;
+            QTimer::singleShot(0,this,[this,next]{if(!done)next();});
+        });
+        QTimer::singleShot(6000,guard,[this,name,guard,accepted]{if(!done&&!*accepted)finish(false,name+": AssetModel::loaded timeout");guard->deleteLater();});
+        action();
+    }
+    void filterStep(int step){
+        auto tab=window->currentTab();auto types=tab->findChild<QListWidget*>("typeNavigation");auto tags=accessibleControl<QListWidget>(QString::fromUtf8("标签筛选，多选取并集"));auto dirs=accessibleControl<QTreeWidget>(QString::fromUtf8("库内目录筛选"));auto status=accessibleControl<QComboBox>(QString::fromUtf8("资产状态筛选"));auto sort=accessibleControl<QComboBox>(QString::fromUtf8("资产排序"));
+        if(!check(QString("ui_filter_controls_present_step_%1").arg(step),types&&tags&&dirs&&status&&sort))return;
+        auto selectType=[types](const QString &id){for(int i=0;i<types->count();++i)if(types->item(i)->data(Qt::UserRole)==id)types->item(i)->setSelected(true);};
+        auto selectTag=[tags](const QString &id){for(int i=0;i<tags->count();++i)if(tags->item(i)->text()==id)tags->item(i)->setSelected(true);};
+        auto advance=[this,step]{filterStep(step+1);};
+        const QStringList all{imageId,modelId,normalId};
+        switch(step){
+        case 0:expectModelRows("ui_type_image_filters_model_rows",{imageId,normalId},false,[types,selectType]{types->clearSelection();selectType("image");},advance);break;
+        case 1:expectModelRows("ui_type_multiselect_is_union",all,false,[selectType]{selectType("model");},advance);break;
+        case 2:expectModelRows("ui_tag_selection_filters_model_rows",{imageId},false,[selectTag]{selectTag("ui-test");},advance);break;
+        case 3:expectModelRows("ui_tag_multiselect_is_union",{imageId,normalId},false,[selectTag]{selectTag("ui-test-normal");},advance);break;
+        case 4:expectModelRows("ui_directory_selection_contains_three_fixtures",all,false,[this,tags,dirs]{tags->clearSelection();for(QTreeWidgetItemIterator it(dirs);*it;++it)if((*it)->data(0,Qt::UserRole).toString()==fixtureRootId){dirs->setCurrentItem(*it);break;}},advance);break;
+        case 5:expectModelRows("ui_favorite_status_filters_model_rows",{imageId},true,[status]{status->setCurrentIndex(status->findData("favorite"));},advance);break;
+        case 6:expectModelRows("ui_modified_sort_uses_source_mtime_desc",{normalId,imageId,modelId},true,[status,sort]{status->setCurrentIndex(status->findData("all"));sort->setCurrentIndex(sort->findData("modified"));},advance);break;
+        case 7:expectModelRows("ui_imported_sort_uses_separate_job_import_order",{modelId,normalId,imageId},true,[sort]{sort->setCurrentIndex(sort->findData("imported"));},advance);break;
+        // Library.cpp specifies SQLite ASCII NOCASE then stable id, not locale/natural sorting.
+        // These distinct ASCII fixture names make the service's first comparator decisive.
+        case 8:expectModelRows("ui_name_sort_matches_sqlite_nocase",{imageId,modelId,normalId},true,[sort]{sort->setCurrentIndex(sort->findData("name"));},advance);break;
+        case 9:expectModelRows("ui_filter_test_restores_original_model_scope",all,false,[this,tab]{tab->restoreSession(originalFilterSession);},[this,tab]{tab->openAsset(modelId);QTimer::singleShot(1500,this,[this]{windowStates();});});break;
+        }
+    }
     void foreground(QWidget *widget){
         foregroundApplicationTestWindow(widget);
     }
@@ -150,6 +230,9 @@ call("library.info",{},[this](const QJsonObject &r){if(!check("dedicated_empty_l
         if(!desktopValidation){
             const QString path=QFileInfo(report).absolutePath()+"/"+fileName+"-framebuffer.png";
             if(!check(frameName,model&&model->isVisible()&&model->saveSnapshot(path)))return false;
+            const QImage frame(path);int foregroundPixels=0;
+            if(!frame.isNull()&&frame.width()>16&&frame.height()>16){const auto background=frame.pixelColor(2,2);for(int y=8;y<frame.height()-8;y+=4)for(int x=8;x<frame.width()-8;x+=4){const auto pixel=frame.pixelColor(x,y);if(qAbs(pixel.red()-background.red())+qAbs(pixel.green()-background.green())+qAbs(pixel.blue()-background.blue())>45)++foregroundPixels;}}
+            if(!check(frameName+"_has_rendered_foreground",foregroundPixels>100))return false;
             nativePresentations.append(QJsonObject{{"name",presentName},{"skipped",true},{"reason","functional-only mode: framebuffer readback is checked; desktop presentation is not captured or validated"},{"framebuffer_file",QFileInfo(path).fileName()}});
             return true;
         }
@@ -340,7 +423,211 @@ call("library.info",{},[this](const QJsonObject &r){if(!check("dedicated_empty_l
             themeSwitch(index+1);
         });});
     }
-    void dialog(){window->currentTab()->focusSearch();dialogOrigin=QApplication::focusWidget();window->showSettings();for(auto candidate:window->findChildren<GlassDialog*>())if(candidate->isVisible())foreground(candidate);QTimer::singleShot(400,this,[this]{GlassDialog *settings=nullptr;for(auto candidate:window->findChildren<GlassDialog*>())if(candidate->isVisible())settings=candidate;if(!check("glass_dialog_frameless",settings&&settings->windowFlags().testFlag(Qt::FramelessWindowHint)))return;if(!check("glass_dialog_content_below_titlebar",settings->layout()&&settings->layout()->contentsMargins().top()>=44))return;if(!check("dialog_focus_starts_in_content",QApplication::focusWidget()&&settings->isAncestorOf(QApplication::focusWidget())&&QApplication::focusWidget()->objectName()!="windowClose"))return;const auto capture=captureWidget(settings);if(capture.error.isEmpty())capture.image.save(QFileInfo(report).absolutePath()+"/ui-settings-dialog.png");else captureWarnings.append(capture.error);QKeyEvent escape(QEvent::KeyPress,Qt::Key_Escape,Qt::NoModifier);QApplication::sendEvent(settings,&escape);if(!check("esc_closes_glass_dialog",!settings->isVisible()))return;QTimer::singleShot(100,this,[this]{if(!check("dialog_returns_focus_to_invoker",dialogOrigin&&QApplication::focusWidget()==dialogOrigin))return;finish(true);});});}
+    static void escapeDialog(QDialog *dialog){QKeyEvent escape(QEvent::KeyPress,Qt::Key_Escape,Qt::NoModifier);QApplication::sendEvent(dialog,&escape);}
+    bool belongsToTestWindow(const QObject *object) const {
+        // QWidget::isAncestorOf deliberately stops at a child window boundary.
+        // Dialog ownership follows QObject parents even though every host is a top-level window.
+        for(auto owner=object;owner;owner=owner->parent())if(owner==window.data())return true;
+        return false;
+    }
+    QDialog *ownedDialog(const QString &objectName={}){
+        for(auto widget:qApp->topLevelWidgets())if(auto candidate=qobject_cast<QDialog*>(widget))if(candidate->isVisible()&&belongsToTestWindow(candidate)&&(objectName.isEmpty()||candidate->objectName()==objectName))return candidate;
+        return nullptr;
+    }
+    bool dialogShell(QDialog *dialog,const QString &name,bool capture=true){
+        layoutDiagnostics.append(QJsonObject{{"name",name},{"dialog_found",dialog!=nullptr},{"dialog_visible",dialog&&dialog->isVisible()},{"dialog_flags",dialog?double(quint64(dialog->windowFlags())):0.},{"object_name",dialog?dialog->objectName():QString()},{"scope",desktopValidation?"owned dialog desktop capture":"owned dialog Qt raster only"}});
+        if(!check(name+"_frameless",dialog&&dialog->isVisible()&&dialog->windowFlags().testFlag(Qt::FramelessWindowHint)))return false;
+#ifdef Q_OS_WIN
+        const auto handle=reinterpret_cast<HWND>(dialog->winId());const auto region=CreateRectRgn(0,0,0,0);
+        const bool rounded=GetWindowRgn(handle,region)!=ERROR&&!PtInRegion(region,0,0);DeleteObject(region);
+        if(!check(name+"_native_rounded_without_caption",rounded&&(GetWindowLongPtrW(handle,GWL_STYLE)&WS_CAPTION)==0))return false;
+#endif
+        bool contentBelow=dialog->layout()&&dialog->layout()->contentsMargins().top()>=44;
+        if(contentBelow)for(int i=0;i<dialog->layout()->count();++i){const auto item=dialog->layout()->itemAt(i);if(item->isEmpty())continue;contentBelow&=item->geometry().top()>=44&&dialog->rect().contains(item->geometry());}
+        if(!check(name+"_content_below_custom_title",contentBelow))return false;
+        const auto available=dialog->screen()->availableGeometry();
+        if(!check(name+"_fits_screen_work_area",dialog->width()<=available.width()&&dialog->height()<=available.height()&&available.contains(dialog->frameGeometry())))return false;
+        auto focus=QApplication::focusWidget();
+        if(!check(name+"_focus_in_content",focus&&dialog->isAncestorOf(focus)&&focus->objectName()!="windowClose"))return false;
+        auto close=dialog->findChild<QToolButton*>("windowClose");
+        const QRect closeBounds=close?QRect(close->mapTo(dialog,QPoint()),close->size()):QRect();
+        if(!check(name+"_title_close_reachable",close&&close->isVisibleTo(dialog)&&close->isEnabled()&&dialog->rect().contains(closeBounds)&&closeBounds.top()>=0&&closeBounds.bottom()<44))return false;
+        bool actionsReachable=true;int actions=0,tableActions=0;QJsonArray actionBounds;
+        for(auto button:dialog->findChildren<QAbstractButton*>())if(button->isVisibleTo(dialog)&&button->objectName()!="windowClose"){
+            QAbstractItemView *view=nullptr;QTableWidget *table=nullptr;
+            for(auto ancestor=button->parentWidget();ancestor&&ancestor!=dialog;ancestor=ancestor->parentWidget())if(auto candidate=qobject_cast<QAbstractItemView*>(ancestor)){if(!view)view=candidate;if(auto candidateTable=qobject_cast<QTableWidget*>(candidate))table=candidateTable;}
+            if(view){
+                // View chrome is not an application action. Table cell widgets are real actions;
+                // prove that scrolling can reveal each entire button without invoking its RPC.
+                if(!table)continue;QModelIndex cell;
+                for(int row=0;row<table->rowCount()&&!cell.isValid();++row)for(int column=0;column<table->columnCount();++column)if(auto widget=table->cellWidget(row,column))if(widget==button||widget->isAncestorOf(button)){cell=table->model()->index(row,column);break;}
+                if(!cell.isValid())continue;
+                ++actions;++tableActions;const int horizontal=table->horizontalScrollBar()->value(),vertical=table->verticalScrollBar()->value();
+                table->scrollTo(cell,QAbstractItemView::PositionAtCenter);
+                const QRect viewportBounds(table->viewport()->mapTo(dialog,QPoint()),table->viewport()->size()),bounds(button->mapTo(table->viewport(),QPoint()),button->size());
+                const bool reachable=dialog->rect().contains(viewportBounds)&&viewportBounds.top()>=44&&table->viewport()->rect().contains(bounds);
+                actionsReachable&=reachable;actionBounds.append(QJsonObject{{"text",button->text()},{"scope","table cell after scrollTo"},{"row",cell.row()},{"column",cell.column()},{"enabled",button->isEnabled()},{"button_bounds",QJsonArray{bounds.x(),bounds.y(),bounds.width(),bounds.height()}},{"viewport_bounds",QJsonArray{viewportBounds.x(),viewportBounds.y(),viewportBounds.width(),viewportBounds.height()}},{"reachable",reachable}});
+                table->horizontalScrollBar()->setValue(horizontal);table->verticalScrollBar()->setValue(vertical);continue;
+            }
+            ++actions;const QRect bounds(button->mapTo(dialog,QPoint()),button->size());const bool reachable=dialog->rect().contains(bounds)&&bounds.top()>=44;actionsReachable&=reachable;
+            actionBounds.append(QJsonObject{{"text",button->text()},{"scope","dialog body"},{"button_bounds",QJsonArray{bounds.x(),bounds.y(),bounds.width(),bounds.height()}},{"reachable",reachable}});
+        }
+        layoutDiagnostics.append(QJsonObject{{"name",name+"_action_reachability"},{"body_action_count",actions},{"table_action_count",tableActions},{"body_actions_applicable",actions>0},{"title_close_bounds",QJsonArray{closeBounds.x(),closeBounds.y(),closeBounds.width(),closeBounds.height()}},{"actions",actionBounds}});
+        if(!check(name+"_actions_reachable",actionsReachable))return false;
+        if(capture){foreground(dialog);const auto image=captureWidget(dialog);if(!check(name+(desktopValidation?"_owned_desktop_capture":"_qt_raster_capture"),image.error.isEmpty()&&!image.image.isNull()))return false;image.image.save(QFileInfo(report).absolutePath()+"/"+name+".png");}
+        return true;
+    }
+    bool clickStandard(QDialog *dialog,QDialogButtonBox::StandardButton button,const QString &name){
+        auto box=dialog->findChild<QDialogButtonBox*>();auto control=box?box->button(button):nullptr;
+        if(!check(name,control&&control->isVisibleTo(dialog)&&control->isEnabled()))return false;control->click();return true;
+    }
+    bool modalProbe(const QString &name,const QString &objectName,std::function<void(QDialog*)> interact,std::function<void()> invoke){
+        auto observed=std::make_shared<bool>(false);auto timerContext=new QObject(this);
+        QTimer::singleShot(250,timerContext,[this,name,objectName,interact,observed]{
+            if(done)return;
+            *observed=true;auto host=ownedDialog(objectName);
+            QJsonArray candidates;for(auto widget:qApp->topLevelWidgets())if(auto dialog=qobject_cast<QDialog*>(widget)){QJsonArray owners;for(auto owner=static_cast<QObject*>(dialog);owner;owner=owner->parent())owners.append(QJsonObject{{"class",QString::fromLatin1(owner->metaObject()->className())},{"object_name",owner->objectName()}});candidates.append(QJsonObject{{"object_name",dialog->objectName()},{"visible",dialog->isVisible()},{"flags",double(quint64(dialog->windowFlags()))},{"owned",belongsToTestWindow(dialog)},{"parent_chain",owners}});}layoutDiagnostics.append(QJsonObject{{"name",name+"_host_lookup"},{"expected_object_name",objectName},{"host_found",host!=nullptr},{"candidates",candidates}});
+            if(!dialogShell(host,name)){if(host)host->reject();else if(auto active=qobject_cast<QDialog*>(qApp->activeModalWidget()))if(belongsToTestWindow(active))active->reject();return;}
+            interact(host);
+        });
+        invoke();
+        timerContext->deleteLater();
+        return !done&&check(name+"_exec_received_qt_interaction",*observed);
+    }
+    void recordFilePicker(const QString &name,const QString &phase,QFileDialog *picker,QDialog *host,const QString &target,bool invoked=false){
+        auto field=picker->findChild<QLineEdit*>("fileNameEdit");QJsonArray selected;
+        for(const auto &path:picker->selectedFiles())selected.append(QJsonObject{{"path",path},{"exists",QFileInfo::exists(path)},{"directory",QFileInfo(path).isDir()}});
+        layoutDiagnostics.append(QJsonObject{{"name",name+"_picker_"+phase},{"selected_files",selected},{"filename_edit",field?field->text():QString()},{"target",target},{"target_exists",QFileInfo::exists(target)},{"directory",picker->directory().absolutePath()},{"file_mode",int(picker->fileMode())},{"accept_mode",int(picker->acceptMode())},{"picker_result",picker->result()},{"host_result",host->result()},{"host_visible",host->isVisible()},{"invoked",invoked}});
+    }
+    bool setPickerFilename(const QString &name,QFileDialog *picker,QDialog *host,const QString &text){
+        auto field=picker->findChild<QLineEdit*>("fileNameEdit");
+        if(!check(name+"_selection_filename_field",field!=nullptr)){host->reject();return false;}
+        // QFileDialog::selectFile intentionally leaves focused, visible filename input unchanged.
+        // Set the real text input, then use its real Open/Save button and Qt's validation.
+        field->setText(text);return true;
+    }
+    void clickFilePickerAccept(const QString &name,QFileDialog *picker,QDialog *host,const QString &target){
+        auto box=picker->findChild<QDialogButtonBox*>();auto button=box?box->button(picker->acceptMode()==QFileDialog::AcceptSave?QDialogButtonBox::Save:QDialogButtonBox::Open):nullptr;
+        recordFilePicker(name,"before_accept",picker,host,target);
+        if(!check(name+"_accept_button_enabled",button&&button->isVisibleTo(host)&&button->isEnabled())){host->reject();return;}
+        QTimer::singleShot(2000,host,[this,name,picker,host,target]{if(done||!host->isVisible())return;recordFilePicker(name,"accept_still_visible",picker,host,target);finish(false,name+": Qt picker accept left host visible");host->reject();});
+        const bool invoked=QMetaObject::invokeMethod(button,"click",Qt::DirectConnection);
+        recordFilePicker(name,"after_accept",picker,host,target,invoked);
+        if(!check(name+"_accept_button_invoked",invoked))host->reject();
+    }
+    void helperDialogs(int stage=0){
+        if(done)return;const QString title=QString::fromUtf8("界面回归 · 隔离素材"),text=QString::fromUtf8("验证自定义标题、键盘、默认操作和取消返回值。");
+        if(stage<4){
+            QMessageBox::StandardButton result=QMessageBox::NoButton;const auto expected=stage==0?QMessageBox::Yes:QMessageBox::No;
+            const QStringList names{"message_question_yes","message_question_no","message_question_close","message_question_default"};
+            if(!modalProbe(names[stage],"glassMessageDialog",[this,stage](QDialog *dialog){
+                if(stage==0||stage==1)clickStandard(dialog,stage==0?QDialogButtonBox::Yes:QDialogButtonBox::No,QString("message_explicit_button_%1").arg(stage));
+                else if(stage==2){auto close=dialog->findChild<QToolButton*>("windowClose");if(check("message_title_close_available",close!=nullptr))close->click();}
+                else {auto box=dialog->findChild<QDialogButtonBox*>();auto no=box?box->button(QDialogButtonBox::No):nullptr;if(!check("message_requested_default_button",no&&no->isDefault())){dialog->reject();return;}QKeyEvent enter(QEvent::KeyPress,Qt::Key_Return,Qt::NoModifier);QApplication::sendEvent(dialog,&enter);}
+            },[&]{result=GlassMessages::question(window,title,text,QMessageBox::Yes|QMessageBox::No,QMessageBox::No);}))return;
+            if(!check(names[stage]+"_return_value",result==expected))return;
+        }else if(stage==4){
+            QMessageBox::StandardButton result=QMessageBox::NoButton;
+            if(!modalProbe("message_question_escape","glassMessageDialog",[](QDialog *dialog){escapeDialog(dialog);},[&]{result=GlassMessages::question(window,title,text,QMessageBox::Yes|QMessageBox::No|QMessageBox::Cancel,QMessageBox::Yes);}))return;
+            if(!check("message_escape_returns_cancel",result==QMessageBox::Cancel))return;
+        }else if(stage>=5&&stage<=7){
+            const QStringList names{"message_information","message_warning","message_about"};const auto name=names[stage-5];
+            if(!modalProbe(name,"glassMessageDialog",[this,name](QDialog *dialog){clickStandard(dialog,QDialogButtonBox::Ok,name+"_acknowledgement_button");},[&]{if(stage==5)GlassMessages::information(window,title,text);else if(stage==6)GlassMessages::warning(window,title,text);else GlassMessages::about(window,title,text);}))return;
+        }else if(stage>=8&&stage<=11){
+            const bool combo=stage>=10,accept=stage%2==0;bool ok=true;QString result;
+            const auto name=QString("input_%1_%2").arg(combo?"combo":"text",accept?"accept":"cancel");
+            if(!modalProbe(name,"glassInputDialog",[this,combo,accept,name](QDialog *dialog){
+                if(combo){auto field=dialog->findChild<QComboBox*>("glassInputField");if(!check(name+"_has_real_items",field&&field->count()==3)){dialog->reject();return;}field->setCurrentIndex(2);}
+                else{auto field=dialog->findChild<QLineEdit*>("glassInputField");if(!check(name+"_has_real_field",field!=nullptr)){dialog->reject();return;}field->setText(QString::fromUtf8("回归输入"));}
+                if(accept)clickStandard(dialog,QDialogButtonBox::Ok,name+"_confirm_available");else escapeDialog(dialog);
+            },[&]{if(combo)result=GlassInputs::getItem(window,title,text,{"first","second","third"},1,false,&ok);else result=GlassInputs::getText(window,title,text,QLineEdit::Normal,"initial",&ok);}))return;
+            if(!check(name+"_value_and_ok",ok==accept&&(accept?result==(combo?QString("third"):QString::fromUtf8("回归输入")):result.isEmpty())))return;
+        }else if(stage>=12&&stage<=19){
+            const int mode=(stage-12)/2;const bool accept=stage%2==0;const QStringList families{"open","save","multi","directory"};const auto name="file_"+families[mode]+(accept?"_accept":"_cancel");
+            QString result;QStringList results;const auto target=fixtureDirectory+"/"+(mode==1?"ui-dialog-save-unused.png":"UI color.png");
+            if(!modalProbe(name,"glassFileDialog",[this,mode,accept,target,name](QDialog *dialog){
+                auto picker=dialog->findChild<QFileDialog*>("glassFilePicker");
+                if(!check(name+"_uses_qt_widget_dialog",picker&&picker->testOption(QFileDialog::DontUseNativeDialog)&&!picker->isWindow())){dialog->reject();return;}
+                if(!accept){escapeDialog(dialog);return;}
+                if(mode==3)picker->setDirectory(fixtureDirectory);else if(!setPickerFilename(name,picker,dialog,mode==2?QString("\"UI color.png\" \"UI normal.png\""):target))return;
+                if(!check(name+"_target_existence_matches_mode",mode==1?!QFileInfo::exists(target):QFileInfo::exists(mode==3?fixtureDirectory:target))){dialog->reject();return;}
+                clickFilePickerAccept(name,picker,dialog,mode==3?fixtureDirectory:target);
+            },[&]{if(mode==0)result=GlassFiles::getOpenFileName(window,title,fixtureDirectory,"PNG (*.png)");else if(mode==1)result=GlassFiles::getSaveFileName(window,title,fixtureDirectory+"/ui-dialog-save-unused.png","PNG (*.png)");else if(mode==2)results=GlassFiles::getOpenFileNames(window,title,fixtureDirectory,"PNG (*.png)");else result=GlassFiles::getExistingDirectory(window,title,fixtureDirectory);}))return;
+            bool valid=false;
+            if(mode==2){auto expected=QStringList{fixtureDirectory+"/UI color.png",fixtureDirectory+"/UI normal.png"};for(auto &path:results)path=QDir::fromNativeSeparators(path);results.sort();expected.sort();valid=accept?results==expected:results.isEmpty();}
+            else valid=accept?QDir::cleanPath(result)==QDir::cleanPath(mode==3?fixtureDirectory:target):result.isEmpty();
+            if(!check(name+"_selected_value",valid))return;
+            if(!check(name+"_save_selection_does_not_create_file",!QFileInfo::exists(fixtureDirectory+"/ui-dialog-save-unused.png")))return;
+        }else if(stage==20){
+            QMessageBox::StandardButton result=QMessageBox::NoButton;
+            if(!modalProbe("message_question_implicit_default","glassMessageDialog",[this](QDialog *dialog){auto box=dialog->findChild<QDialogButtonBox*>();auto yes=box?box->button(QDialogButtonBox::Yes):nullptr;if(!check("message_implicit_default_is_qt_yes",yes&&yes->isDefault())){dialog->reject();return;}QKeyEvent enter(QEvent::KeyPress,Qt::Key_Return,Qt::NoModifier);QApplication::sendEvent(dialog,&enter);},[&]{result=GlassMessages::question(window,title,text,QMessageBox::Yes|QMessageBox::No);}))return;
+            if(!check("message_implicit_default_return_value",result==QMessageBox::Yes))return;
+        }else {fileValidationDialogs();return;}
+        QTimer::singleShot(50,this,[this,stage]{helperDialogs(stage+1);});
+    }
+    QByteArray fixtureDigest(const QString &path){QFile source(path);return source.open(QIODevice::ReadOnly)?QCryptographicHash::hash(source.readAll(),QCryptographicHash::Sha256):QByteArray{};}
+    void fileValidationDialogs(int stage=0){
+        const auto source=fixtureDirectory+"/UI color.png";const auto before=fixtureDigest(source);auto observed=std::make_shared<bool>(false);QString result;
+        const auto name=stage==0?QString("file_open_missing_path"):QString("file_save_existing_no_overwrite");
+        if(!modalProbe(name,"glassFileDialog",[this,stage,source,observed,name](QDialog *host){
+            auto picker=host->findChild<QFileDialog*>("glassFilePicker");if(!check(name+"_real_picker",picker!=nullptr)){host->reject();return;}
+            const auto target=stage==0?fixtureDirectory+"/not-present-ui-fixture.png":source;if(!setPickerFilename(name,picker,host,target))return;
+            if(!check(name+"_target_existence_matches_case",QFileInfo::exists(target)==(stage==1))){host->reject();return;}
+            QPointer<QDialog> owner=host;
+            QTimer::singleShot(250,this,[this,stage,owner,observed,name]{
+                auto box=qobject_cast<QMessageBox*>(qApp->activeModalWidget());
+                if(!check(stage==0?"file_missing_path_uses_real_qt_message":"file_overwrite_uses_real_qt_message",box&&box->objectName()=="glassMessageDialog"&&belongsToTestWindow(box))){if(box&&belongsToTestWindow(box))box->reject();if(owner)owner->reject();return;}
+                *observed=true;
+                if(!dialogShell(box,stage==0?"file_missing_path_message":"file_overwrite_confirmation")){box->reject();if(owner)owner->reject();return;}
+                auto button=box->button(stage==0?QMessageBox::Ok:QMessageBox::No);
+                if(!check(stage==0?"file_missing_path_can_acknowledge":"file_overwrite_no_available",button!=nullptr)){box->reject();if(owner)owner->reject();return;}
+                button->click();
+                QTimer::singleShot(0,this,[this,owner,name]{if(owner){if(!check(name+"_returns_to_picker_after_message",owner->isVisible()))return;escapeDialog(owner);}});
+            });
+            if(stage==0){
+                auto box=picker->findChild<QDialogButtonBox*>();auto open=box?box->button(QDialogButtonBox::Open):nullptr;
+                if(!check(name+"_open_disabled_for_missing_file",open&&open->isVisibleTo(host)&&!open->isEnabled())){host->reject();return;}
+                auto field=picker->findChild<QLineEdit*>("fileNameEdit");field->setFocus(Qt::OtherFocusReason);
+                recordFilePicker(name,"before_filename_return",picker,host,target);
+                // Qt's real filename returnPressed connection invokes validation even while Open is disabled.
+                // Deliver the user keyboard path, preserving the original QFileDialog warning and its buttons.
+                QKeyEvent press(QEvent::KeyPress,Qt::Key_Return,Qt::NoModifier),release(QEvent::KeyRelease,Qt::Key_Return,Qt::NoModifier);
+                const bool delivered=QApplication::sendEvent(field,&press);QApplication::sendEvent(field,&release);
+                recordFilePicker(name,"after_filename_return",picker,host,target,delivered);
+                if(!check(name+"_filename_return_delivered",delivered))host->reject();
+            }else clickFilePickerAccept(name,picker,host,target);
+        },[&]{if(stage==0)result=GlassFiles::getOpenFileName(window,QString::fromUtf8("不存在的隔离素材"),fixtureDirectory,"PNG (*.png)");else result=GlassFiles::getSaveFileName(window,QString::fromUtf8("现有隔离素材的覆盖确认"),source,"PNG (*.png)");}))return;
+        if(!check(name+"_cancelled_without_source_write",*observed&&result.isEmpty()&&!before.isEmpty()&&fixtureDigest(source)==before))return;
+        QTimer::singleShot(50,this,[this,stage]{if(stage==0)fileValidationDialogs(1);else applicationDialogs();});
+    }
+    void applicationDialogs(int stage=0){
+        if(done)return;
+        if(stage>=7){window->resize(initialGeometry.size());finish(true);return;}
+        window->resize(960,640);auto prior=qApp->topLevelWidgets();
+        const QStringList names{"jobs","issues","roles","ordered_relations","ordered_previews","asset_picker","import_confirmation"};
+        if(stage==0)window->showJobs();
+        else if(stage==1)window->showIssues();
+        else if(stage==2){QAction *entry=nullptr;for(auto action:window->findChildren<QAction*>())if(action->text()==QString::fromUtf8("管理关联标签…"))entry=action;if(!check("roles_dialog_has_real_menu_entry",entry!=nullptr))return;entry->trigger();}
+        else if(stage==3||stage==4){call("asset.get",{{"asset_id",modelId}},[this,stage](const QJsonObject &asset){auto dialog=new OrderedEditor(rpc,new ThumbnailStore(rpc,this),asset,stage==3?OrderedEditor::Relations:OrderedEditor::Previews,window);dialog->setAttribute(Qt::WA_DeleteOnClose);dialog->show();QTimer::singleShot(250,this,[this,dialog,stage]{verifyApplicationDialog(dialog,stage==3?"ordered_relations":"ordered_previews",stage);});});return;}
+        else if(stage==5){auto dialog=new AssetPicker(rpc,new ThumbnailStore(rpc,this),QString::fromUtf8("隔离素材选择"),{},window);dialog->setAttribute(Qt::WA_DeleteOnClose);dialog->show();QTimer::singleShot(250,this,[this,dialog,stage]{verifyApplicationDialog(dialog,"asset_picker",stage);});return;}
+        else window->currentTab()->importPaths({fixtureDirectory+"/UI color.png"});
+        QTimer::singleShot(250,this,[this,stage,prior,names]{QDialog *dialog=nullptr;for(auto candidate:qApp->topLevelWidgets())if(!prior.contains(candidate)&&candidate->isVisible()&&belongsToTestWindow(candidate))if(auto created=qobject_cast<QDialog*>(candidate))dialog=created;verifyApplicationDialog(dialog,names[stage],stage);});
+    }
+    void verifyApplicationDialog(QDialog *dialog,const QString &family,int stage){
+        const auto name="application_"+family+"_960";
+        if(!check(name+"_opened_from_actual_entry_or_class",dialog!=nullptr))return;
+        // Exercise the dialog under the same 960 x 640 logical work area as the small main-window regression.
+        const auto available=dialog->screen()->availableGeometry();dialog->resize(dialog->size().boundedTo(QSize(960,640)).boundedTo(available.size()));
+        QTimer::singleShot(100,this,[this,dialog,name,stage]{
+            if(!check(name+"_bounded_size",dialog->width()<=960&&dialog->height()<=640))return;
+            if(!dialogShell(dialog,name))return;
+            bool noClipping=true;for(auto scroll:dialog->findChildren<QScrollArea*>())if(scroll->isVisibleTo(dialog))noClipping&=scroll->horizontalScrollBar()->maximum()==0;
+            if(!check(name+"_content_has_no_horizontal_clipping",noClipping))return;
+            const QPointer<QDialog> guard=dialog;escapeDialog(dialog);
+            QTimer::singleShot(0,this,[this,guard,name,stage]{if(!check(name+"_escape_closes",!guard||!guard->isVisible()))return;applicationDialogs(stage+1);});
+        });
+    }
+    void dialog(){window->currentTab()->focusSearch();dialogOrigin=QApplication::focusWidget();window->showSettings();for(auto candidate:window->findChildren<GlassDialog*>())if(candidate->isVisible())foreground(candidate);QTimer::singleShot(400,this,[this]{GlassDialog *settings=nullptr;for(auto candidate:window->findChildren<GlassDialog*>())if(candidate->isVisible())settings=candidate;if(!check("glass_dialog_frameless",settings&&settings->windowFlags().testFlag(Qt::FramelessWindowHint)))return;if(!check("glass_dialog_content_below_titlebar",settings->layout()&&settings->layout()->contentsMargins().top()>=44))return;if(!check("dialog_focus_starts_in_content",QApplication::focusWidget()&&settings->isAncestorOf(QApplication::focusWidget())&&QApplication::focusWidget()->objectName()!="windowClose"))return;const auto capture=captureWidget(settings);if(capture.error.isEmpty())capture.image.save(QFileInfo(report).absolutePath()+"/ui-settings-dialog.png");else captureWarnings.append(capture.error);QKeyEvent escape(QEvent::KeyPress,Qt::Key_Escape,Qt::NoModifier);QApplication::sendEvent(settings,&escape);if(!check("esc_closes_glass_dialog",!settings->isVisible()))return;QTimer::singleShot(100,this,[this]{if(!check("dialog_returns_focus_to_invoker",dialogOrigin&&QApplication::focusWidget()==dialogOrigin))return;helperDialogs();});});}
     void navigation(){auto tab=window->currentTab();tab->openAsset(imageId);if(!check("association_history_push",tab->session()["history"].toArray()==QJsonArray{modelId,imageId}))return;tab->back();if(!check("association_back_returns_model",tab->session()["history"].toArray()==QJsonArray{modelId}))return;tab->home();if(!check("home_clears_history",tab->session()["history"].toArray().isEmpty()&&!tab->session()["detail"].toBool()))return;QJsonObject state{{"filter",QJsonObject{{"query","UI"},{"types",QJsonArray{"image","video"}},{"tags",QJsonArray{"ui-test","color"}},{"status","favorite"},{"sort","name"}}},{"history",QJsonArray{modelId,imageId}},{"detail",true},{"asset_id",imageId}};auto duplicate=window->addTab(state);if(!check("duplicate_tab_keeps_independent_filters",duplicate->session()["filter"]==state["filter"]&&tab->session()["history"].toArray().isEmpty()))return;second=new MainWindow(rpc,new ThumbnailStore(rpc,this));second->show();second->currentTab()->openAsset(imageId);call("asset.get",{{"asset_id",imageId}},[this](const QJsonObject &asset){call("asset.update",{{"asset_id",imageId},{"revision",asset["revision"]},{"values",QJsonObject{{"name","UI synchronized.png"}}}},[this](const QJsonObject &){rpc->refresh();QTimer::singleShot(2300,this,[this]{if(!window||!second){finish(false,"window closed during test");return;}if(!check("two_windows_share_asset_identity",window->currentTab()->currentAssetId()==imageId&&second->currentTab()->currentAssetId()==imageId))return;auto hasName=[](MainWindow *w){for(auto edit:w->findChildren<QLineEdit*>())if(edit->text()=="UI synchronized.png")return true;return false;};if(!check("cross_window_update_visible",hasName(window)&&hasName(second)))return;window->currentTab()->home();window->currentTab()->restoreSession({{"filter",QJsonObject{}},{"history",QJsonArray{}},{"detail",false}});attempts=0;waitForThumbnail();});});});}
 };
 }

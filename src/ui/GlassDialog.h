@@ -4,6 +4,9 @@
 #include <QPointer>
 class QToolButton;
 
+// Reuses this shell for Qt-owned child messages without replacing their logic.
+void decorateGlassDialog(QDialog *dialog);
+
 // Keeps application dialogs inside the same opaque, native-renderer-safe shell.
 class GlassDialog : public QDialog {
     Q_OBJECT

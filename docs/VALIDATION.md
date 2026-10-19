@@ -24,6 +24,14 @@
 
 部署后的 `ImagiDock-linear.exe` 清除开发 PATH、Qt、Python 和 Node 环境提示后，再次通过 89 项功能检查，包目录文件集合、大小和修改时间保持不变，包内 Python／Node 启动正常；此检查仍不包含桌面呈现，回执为 `logs/portable-linear-functional-20261020.json`。MCP 只读确认原库 12 项、丢失数零；现有库的 Qt 素材网格已目检。原 RC 程序、ZIP、主题颜色源、晕染绘制及渲染实现均核对保持。
 
+## 2026-10-20 Linear v2 弹窗与控件回归
+
+`0.1.0-rc.1+linear.20261020.2` 完成 Release 构建，在实际 DPR 1.0／1.5 下各通过 **513 项功能与布局断言**，截图警告为零。新增检查通过真实类型／标签／目录／状态筛选及名称、修改时间、导入时间排序，21 个标准弹窗交互、Qt 自身的缺失文件提示和覆盖确认、七类业务弹窗、表格按钮滚动可达、文件不被选择操作改写，以及四个帧缓冲的有效模型前景。功能报告明确标记 `desktop_validation: false` 和四个跳过的桌面比对。
+
+回执为 `logs/ui-ux-linear-v2-functional-100-fix4/self-test.json`、`logs/ui-ux-linear-v2-functional-150-final/self-test.json`。严格模式仍因测试窗口被 Windows `LockApp` 遮挡而停止；未降低像素阈值或使用 Qt 栅格图替代桌面证据。先前 89 项功能结果及 52／75 项桌面结果均属于各自旧版本，不能覆盖本次尚未取得的桌面呈现证据。实现范围和新入口见 [UI 修订记录](UI_REFINEMENT.md#linear-v2统一内部弹窗)。
+
+部署后清除开发环境提示的便携依赖检查通过同样的 513 项功能断言，断言名称无重复、包目录未改变，包内 Python／Node 正常运行。回执为 `logs/portable-linear-v2-functional-20261020.json`。原 RC 程序和 ZIP、四色主题源、主窗晕染绘制及渲染源码均核对保持；MCP 只读复核原库仍有 12 项示范素材且无来源丢失。
+
 ## 构建与运行环境
 
 本机 Windows x64 Release 已编译桌面程序、库服务、Filament 渲染助手、SAI1 助手和 Qt 媒体助手，支持中文工作区路径。主要组件为 Qt 6.8.3、Filament 1.78.0、Assimp 5.4.3、SQLite 3.50.4、Zstandard 1.5.7；3D 验证使用 RTX 4070 Ti / OpenGL。

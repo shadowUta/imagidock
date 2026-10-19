@@ -41,7 +41,7 @@ def validate_ui_report(data):
 
 parser=argparse.ArgumentParser()
 parser.add_argument('--package',type=Path,default=ROOT/'dist/ImagiDock-0.1.0-rc.1-win-x64')
-parser.add_argument('--executable',default='ImagiDock.exe',choices=('ImagiDock.exe','ImagiDock-ui.exe','ImagiDock-linear.exe'))
+parser.add_argument('--executable',default='ImagiDock.exe',choices=('ImagiDock.exe','ImagiDock-ui.exe','ImagiDock-linear.exe','ImagiDock-linear-v2.exe'))
 options=parser.parse_args()
 PACKAGE=options.package.resolve()
 if not PACKAGE.is_relative_to(ROOT):raise ValueError('Test package must stay inside the workspace')

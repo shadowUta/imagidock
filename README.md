@@ -4,13 +4,13 @@
 
 **当前为 v0.1.0-rc.1 发布候选，不是完整首版交付。** 圆角无边框窗口、统一玻璃弹窗及四主题已通过功能和视觉检查；独立干净系统、Windows 10 及更广泛源文件兼容性尚未完成验证。完整范围与性能数据见 [验收记录](docs/VALIDATION.md)，版本变化见 [发布说明](docs/RELEASE_NOTES.md)。
 
-本地 UI 修订 `0.1.0-rc.1+linear.20261020` 使用 UI UX Pro Max Skill，参考 [Linear 官方面板结构](https://linear.app/now/behind-the-latest-design-refresh) 调整紧凑页签、侧栏、位置栏、视图栏与信息检查器。保留原有四套主题颜色、晕染玻璃背景、小圆角和顶部拖动。验证范围见 [UI 记录](docs/UI_REFINEMENT.md)，已发布 RC ZIP 保留原版。
+本地 UI 修订 `0.1.0-rc.1+linear.20261020.2` 使用 UI UX Pro Max Skill，参考 [Linear 官方面板结构](https://linear.app/now/behind-the-latest-design-refresh) 调整紧凑页签、侧栏、位置栏、视图栏与信息检查器，并统一确认、输入和文件选择弹窗。保留原有四套主题颜色、晕染玻璃背景、小圆角和顶部拖动。验证范围见 [UI 记录](docs/UI_REFINEMENT.md)，已发布 RC ZIP 保留原版。
 
 ## 开始使用
 
 将便携包解压到可写目录，运行 `ImagiDock.exe`。默认素材库位于程序旁的 `data/library`；“文件 → 打开 / 新建素材库”或 `--library <目录>` 可选择其他库。包内带有运行所需的 Qt、Python 和 Node 组件；Blender、Aseprite 属于可选的用户工具。
 
-本工程的本地更新使用根目录 `启动创想坞.cmd`，优先运行同目录依赖下的 `ImagiDock-linear.exe`，保留既有默认素材库。完成构建后可用 `scripts/update-local-ui.ps1 -SkipBuild` 更新该入口的程序。
+本工程的本地更新使用根目录 `启动创想坞.cmd`，优先运行同目录依赖下的 `ImagiDock-linear-v2.exe`，保留既有默认素材库。完成构建后可用 `scripts/update-local-ui.ps1 -SkipBuild` 更新该入口的程序。
 
 - 递归导入文件夹或拖入文件，保持库内目录结构。默认只索引来源，可单独或批量后台备份。
 - 网格卡片单击查看右侧信息、双击进入详情；图片完整显示并支持缩放，模型实时旋转、材质覆盖和动画，音视频播放与定位。
@@ -24,7 +24,7 @@
 
 ## 验证状态
 
-已有真实 C++ 库服务、Filament 渲染、格式解码、MCP 与多窗口测试。核心 QtTest 10 个结果、格式测试 10 项、源格式材质测试 3 项、MCP SDK 测试 2 项及真实 MCP 服务 12 项断言通过。最新 Linear 布局在两档缩放下各通过 89 项功能断言；四项桌面模型画面比对因当前桌面捕获无新帧而待验收，不计为通过。已有本机隔离开发环境的便携检查；尚未在独立无开发环境的 Windows 系统上验收。
+已有真实 C++ 库服务、Filament 渲染、格式解码、MCP 与多窗口测试。核心 QtTest 10 个结果、格式测试 10 项、源格式材质测试 3 项、MCP SDK 测试 2 项及真实 MCP 服务 12 项断言通过。最新 Linear 布局及统一弹窗在两档缩放下各通过 513 项功能与布局断言；四项桌面模型画面比对被当前 Windows 锁屏遮挡而待验收，不计为通过。已有本机隔离开发环境的便携检查；尚未在独立无开发环境的 Windows 系统上验收。
 
 一万条合成记录的三个查询场景热缓存 P95 为 16.893–23.200 ms；最终 1080p 石墨黑网格的首屏 28 张缓存缩略图为 119.380 ms。十万条记录标签并集 P95 为 131.530 ms。测量口径、四主题基线、绘制耗时及未覆盖范围见 [性能与限制](docs/VALIDATION.md#性能记录)。
 
