@@ -33,10 +33,13 @@ protected:
     bool eventFilter(QObject *watched,QEvent *event) override;
 private:
     void fitPreviewHeight();
+    void updateLocation();
+    void updateRelatedIcons();
+    void updateInspectorThumbnail();
     QScrollArea *m_detailScroll=nullptr;
     RpcClient *m_rpc;ThumbnailStore *m_thumbs;AssetModel *m_model;AssetGrid *m_grid;
     QTreeWidget *m_directories;QListWidget *m_types,*m_tags;QLineEdit *m_search;QComboBox *m_status,*m_sort;
-    QStackedWidget *m_pages;QLabel *m_count,*m_empty,*m_detailStatus;AssetTitleLabel *m_detailTitle;
+    QStackedWidget *m_pages;QLabel *m_count,*m_empty,*m_detailStatus,*m_previewsEmpty,*m_relationsEmpty;AssetTitleLabel *m_detailTitle,*m_locationTitle;
     PreviewPane *m_preview;QListWidget *m_previews,*m_relations;
     QLineEdit *m_name,*m_assetTags;QLabel *m_meta,*m_path;QPushButton *m_favorite,*m_locate,*m_external,*m_backup,*m_export,*m_restore;
     QWidget *m_inspector;QLabel *m_inspectorThumbnail;

@@ -47,12 +47,51 @@ void AssetModel::refreshRange(int first,int count){if(m_refreshing||m_loading)re
 bool AssetModel::canFetchMore(const QModelIndex &p)const{return !p.isValid()&&!m_loading&&m_assets.size()<m_total;}
 void AssetModel::fetchMore(const QModelIndex &p){if(p.isValid()||m_loading)return;m_loading=true;const auto generation=m_generation;auto params=m_filter;params["offset"]=m_assets.size();params["limit"]=200;m_rpc->call("asset.list",params,this,[this,generation](const QJsonObject &r,const QString &err){if(generation!=m_generation)return;m_loading=false;if(!err.isEmpty()){emit error(err);return;}const auto items=r["items"].toArray();m_total=r["total"].toInt();if(!items.isEmpty()){const int first=m_assets.size();beginInsertRows({},first,first+items.size()-1);for(const auto &v:items)m_assets.append(v.toObject());endInsertRows();}emit loaded(m_assets.size(),m_total);});}
 void AssetDelegate::paint(QPainter *p,const QStyleOptionViewItem &o,const QModelIndex &i)const{
-    p->save();p->setRenderHint(QPainter::Antialiasing);const auto a=i.data(AssetModel::AssetRole).toJsonObject();const bool selected=o.state&QStyle::State_Selected;const bool hover=o.state&QStyle::State_MouseOver;
-    const auto theme=themeColors();const QColor text=theme.text,accent=theme.accent;QRect card=o.rect.adjusted(4,4,-4,-4);p->setPen(Qt::NoPen);p->setBrush(QColor(0,0,0,theme.light?5:13));p->drawRoundedRect(card.translated(0,2),UiMetrics::CardRadius,UiMetrics::CardRadius);QLinearGradient glass(card.topLeft(),card.bottomLeft());QColor top=theme.card,bottom=theme.card;top.setAlpha(qMin(255,top.alpha()+(hover?23:9)));bottom.setAlpha(qMax(5,bottom.alpha()-(theme.light?35:4)));glass.setColorAt(0,top);glass.setColorAt(1,bottom);p->setPen(QPen(selected?accent:theme.edge,selected?1.6:1));p->setBrush(glass);p->drawRoundedRect(card,UiMetrics::CardRadius,UiMetrics::CardRadius);if(selected){QColor tint=accent;tint.setAlpha(theme.light?24:20);p->setPen(Qt::NoPen);p->setBrush(tint);p->drawRoundedRect(card.adjusted(1,1,-1,-1),UiMetrics::CardRadius-1,UiMetrics::CardRadius-1);}
-    QRect image=card.adjusted(10,10,-10,-58);
-    const QPixmap pix=i.data(Qt::DecorationRole).value<QPixmap>();if(!pix.isNull()){const QSize fitted=pix.size().scaled(image.size()-QSize(8,8),Qt::KeepAspectRatio);const QRect dest(image.center()-QPoint(fitted.width()/2,fitted.height()/2),fitted);p->setRenderHint(QPainter::SmoothPixmapTransform);p->drawPixmap(dest,pix);}else{p->setPen(o.palette.color(QPalette::PlaceholderText));QFont f=o.font;f.setPointSize(22);p->setFont(f);QString type=a["type"].toString();const QString symbol=type=="model"?QString::fromUtf8("◇"):type=="audio"?QString::fromUtf8("∿"):type=="video"?QString::fromUtf8("▷"):QString::fromUtf8("▧");p->drawText(image,Qt::AlignCenter,symbol);}
-    p->setFont(o.font);p->setPen(text);const QRect name(card.left()+12,card.bottom()-44,card.width()-24,20);p->drawText(name,Qt::AlignVCenter,o.fontMetrics.elidedText(a["name"].toString(),Qt::ElideMiddle,name.width()));
-    QFont small=o.font;small.setPointSizeF(qMax(8.,small.pointSizeF()-1));p->setFont(small);p->setPen(o.palette.color(QPalette::PlaceholderText));QString label=a["extension"].toString().toUpper();const QString backup=a["backup_state"].toString();if(a["missing"].toBool())label+=QString::fromUtf8("  ·  来源丢失");else if(backup=="ready")label+=QString::fromUtf8("  ·  已备份");else if(backup=="stale")label+=QString::fromUtf8("  ·  备份过期");if(a["missing"].toBool()||backup=="ready"||backup=="stale")p->setPen(theme.text);p->drawText(card.adjusted(12,card.height()-24,-8,-5),Qt::AlignLeft|Qt::AlignVCenter,label);if(a["favorite"].toBool()){p->setPen(QColor("#edc778"));p->drawText(image.adjusted(6,3,-5,-4),Qt::AlignTop|Qt::AlignRight,QString::fromUtf8("★"));}if(o.state&QStyle::State_HasFocus){p->setBrush(Qt::NoBrush);p->setPen(QPen(theme.text,2));p->drawRoundedRect(card.adjusted(3,3,-3,-3),UiMetrics::ControlRadius,UiMetrics::ControlRadius);}p->restore();
+    p->save();p->setRenderHint(QPainter::Antialiasing);
+    const auto a=i.data(AssetModel::AssetRole).toJsonObject();
+    const bool selected=o.state&QStyle::State_Selected,hover=o.state&QStyle::State_MouseOver,focused=o.state&QStyle::State_HasFocus;
+    const auto theme=themeColors();const QRect card=o.rect.adjusted(4,4,-4,-4);
+    QColor surface=selected?theme.accent:theme.card;
+    surface.setAlpha(selected?(theme.light?26:20):(theme.light?(hover?126:104):(hover?23:14)));
+    p->setPen(Qt::NoPen);p->setBrush(surface);p->drawRoundedRect(card,UiMetrics::CardRadius,UiMetrics::CardRadius);
+
+    // One quiet boundary separates the full-image preview from its metadata.
+    QColor divider=theme.edge;divider.setAlpha(theme.light?112:28);
+    p->setPen(QPen(divider,1));p->drawLine(card.left()+12,card.bottom()-54,card.right()-12,card.bottom()-54);
+    const QRect image=card.adjusted(10,10,-10,-66);
+    const QPixmap pix=i.data(Qt::DecorationRole).value<QPixmap>();
+    if(!pix.isNull()){
+        const QSize fitted=pix.size().scaled(image.size()-QSize(8,8),Qt::KeepAspectRatio);
+        const QRect dest(image.center()-QPoint(fitted.width()/2,fitted.height()/2),fitted);
+        p->setRenderHint(QPainter::SmoothPixmapTransform);p->drawPixmap(dest,pix);
+    }else{
+        p->setPen(theme.muted);QFont f=o.font;f.setPointSize(22);p->setFont(f);
+        const QString type=a["type"].toString();
+        const QString symbol=type=="model"?QString::fromUtf8("◇"):type=="audio"?QString::fromUtf8("∿"):type=="video"?QString::fromUtf8("▷"):QString::fromUtf8("▧");
+        p->drawText(image,Qt::AlignCenter,symbol);
+    }
+
+    p->setFont(o.font);p->setPen(theme.text);
+    const QRect name(card.left()+12,card.bottom()-44,card.width()-24,20);
+    p->drawText(name,Qt::AlignVCenter,o.fontMetrics.elidedText(a["name"].toString(),Qt::ElideMiddle,name.width()));
+    QFont small=o.font;small.setPointSizeF(qMax(8.,small.pointSizeF()-1));p->setFont(small);p->setPen(theme.muted);
+    QString label=a["extension"].toString().toUpper();const QString backup=a["backup_state"].toString();
+    if(a["missing"].toBool())label+=QString::fromUtf8("  ·  来源丢失");
+    else if(backup=="ready")label+=QString::fromUtf8("  ·  已备份");
+    else if(backup=="stale")label+=QString::fromUtf8("  ·  备份过期");
+    if(a["missing"].toBool()||backup=="ready"||backup=="stale")p->setPen(theme.text);
+    const QRect status(card.left()+12,card.bottom()-24,card.width()-24,19);
+    p->drawText(status,Qt::AlignLeft|Qt::AlignVCenter,p->fontMetrics().elidedText(label,Qt::ElideRight,status.width()));
+    if(a["favorite"].toBool()){
+        p->setPen(QColor("#edc778"));p->drawText(image.adjusted(6,3,-5,-4),Qt::AlignTop|Qt::AlignRight,QString::fromUtf8("★"));
+    }
+
+    // Focus and selection share the outer boundary instead of stacking rings.
+    QColor border=focused?theme.text:selected?theme.accent:theme.edge;
+    if(!selected&&!focused)border.setAlpha(theme.light?(hover?160:108):(hover?54:29));
+    p->setBrush(Qt::NoBrush);p->setPen(QPen(border,focused?2.:1.));
+    p->drawRoundedRect(QRectF(card).adjusted(.5,.5,-.5,-.5),UiMetrics::CardRadius,UiMetrics::CardRadius);
+    p->restore();
 }
 AssetGrid::AssetGrid(QWidget *p):QListView(p),m_delegate(new AssetDelegate(this)){setObjectName("assetGrid");setAccessibleName(tr("素材卡片列表"));setAccessibleDescription(tr("方向键选择素材，Enter 打开详情；Ctrl 或 Shift 多选。"));setViewMode(IconMode);setResizeMode(Adjust);setMovement(Static);setWrapping(true);setUniformItemSizes(true);setLayoutMode(Batched);setBatchSize(80);setSelectionMode(ExtendedSelection);setVerticalScrollMode(ScrollPerPixel);setMouseTracking(true);setSpacing(0);setAcceptDrops(true);setDragEnabled(false);setItemDelegate(m_delegate);setCardSize(176);}
 void AssetGrid::setCardSize(int size){m_delegate->setCardSize(size);setGridSize({size,size+58});doItemsLayout();}

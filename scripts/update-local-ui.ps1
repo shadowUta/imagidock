@@ -13,12 +13,12 @@ foreach($taskRequired in @('ImagiDock.exe','imagidock-service.exe','Qt6Widgets.d
 }
 # Same application directory keeps the existing default library and helpers.
 # The public RC executable and ZIP are retained for reproducible downloads.
-$taskUpdated=Join-Path $taskPackage 'ImagiDock-ui.exe'
+$taskUpdated=Join-Path $taskPackage 'ImagiDock-linear.exe'
 Copy-Item -LiteralPath $taskBinary -Destination $taskUpdated -Force
 Copy-Item -LiteralPath (Join-Path $taskRoot 'docs/UI_REFINEMENT.md') -Destination (Join-Path $taskPackage 'docs/UI_REFINEMENT-local.md') -Force
 $taskReceipt=[ordered]@{
-    version='0.1.0-rc.1+ui.20261020'
-    entry='ImagiDock-ui.exe'
+    version='0.1.0-rc.1+linear.20261020'
+    entry='ImagiDock-linear.exe'
     sha256=(Get-FileHash -LiteralPath $taskUpdated -Algorithm SHA256).Hash.ToLowerInvariant()
     bytes=(Get-Item -LiteralPath $taskUpdated).Length
     library='data/library'

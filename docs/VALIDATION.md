@@ -16,6 +16,14 @@
 
 部署后的 `ImagiDock-ui.exe` 在去除开发 PATH、Qt/Python/Node 环境提示后完成 75 项检查，包目录保持不变，截图警告为零；回执为 `logs/portable-ui-align-20261020-final.json`。首轮检查在窗口处于系统最小化坐标时触发焦点恢复失败，未计为通过；失败记录保留，使用全新测试库复核后通过。原默认库经 MCP 确认仍有 12 个示范素材且来源丢失数为零，真实网格及模型详情截图检查通过。原 RC 程序与 ZIP 的哈希保持原值。
 
+## 2026-10-20 Linear 布局修订
+
+`0.1.0-rc.1+linear.20261020` 已完成 Release 构建，实际 DPR 1.0／1.5 各通过 **89 项功能检查**，Qt 栅格截图警告为零。新增布局边界、窄窗口及边栏极限、导航重复点击、缩略图完整显示和动态主题线图标检查均通过。原主题颜色源及晕染绘制保持，模型上下方向实现未改。回执：`logs/ui-ux-linear-functional-100-final2/self-test.json`、`logs/ui-ux-linear-functional-150-final2/self-test.json`。
+
+**本次未完成严格桌面呈现验收。** 四个模型状态有实际 Filament 帧缓冲，桌面比对在功能报告中明确跳过；完整严格模式应为 93 项，不能把 89 项功能结果当作 93 项通过。当前 DXGI 桌面帧获取持续超时 `0x887a0027`，GDI 的新旧版对照也未取得有效模型呈现，原因仍待确认。所有失败回执保留，最终渲染实现未包含无效实验。完整方法、诊断模式和本地交付入口见 [UI 修订记录](UI_REFINEMENT.md#linear-本地修订验证范围)。
+
+部署后的 `ImagiDock-linear.exe` 清除开发 PATH、Qt、Python 和 Node 环境提示后，再次通过 89 项功能检查，包目录文件集合、大小和修改时间保持不变，包内 Python／Node 启动正常；此检查仍不包含桌面呈现，回执为 `logs/portable-linear-functional-20261020.json`。MCP 只读确认原库 12 项、丢失数零；现有库的 Qt 素材网格已目检。原 RC 程序、ZIP、主题颜色源、晕染绘制及渲染实现均核对保持。
+
 ## 构建与运行环境
 
 本机 Windows x64 Release 已编译桌面程序、库服务、Filament 渲染助手、SAI1 助手和 Qt 媒体助手，支持中文工作区路径。主要组件为 Qt 6.8.3、Filament 1.78.0、Assimp 5.4.3、SQLite 3.50.4、Zstandard 1.5.7；3D 验证使用 RTX 4070 Ti / OpenGL。

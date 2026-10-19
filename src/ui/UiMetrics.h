@@ -9,6 +9,10 @@ inline constexpr int PanelRadius = 8;
 inline constexpr int CardRadius = 8;
 inline constexpr int WindowRadius = 12;
 inline constexpr int DialogRadius = 10;
-inline constexpr int HeaderHeight = 56;
-inline constexpr int SectionHeight = 32;
+inline constexpr int HeaderHeight = 44;
+inline constexpr int SectionHeight = 28;
+inline constexpr int TabBottomInset = 4;
+inline constexpr int ControlHeight = 28;
+inline constexpr int LocationHeight = 44;
+inline constexpr int ViewHeight = 42;
 }

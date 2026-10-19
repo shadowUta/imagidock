@@ -24,6 +24,8 @@ def validate_ui_report(data):
     """Do not accept an older package that only reports successful readback."""
     if not isinstance(data,dict) or data.get('ok') is not True:
         raise RuntimeError('Portable self-test did not report success')
+    if data.get('desktop_validation') is False:
+        raise RuntimeError('Functional-only results cannot certify desktop presentation')
     rows=data.get('assertions')
     if not isinstance(rows,list) or any(not isinstance(row,dict) or not isinstance(row.get('name'),str) for row in rows):
         raise RuntimeError('Portable self-test assertions are malformed')
@@ -39,7 +41,7 @@ def validate_ui_report(data):
 
 parser=argparse.ArgumentParser()
 parser.add_argument('--package',type=Path,default=ROOT/'dist/ImagiDock-0.1.0-rc.1-win-x64')
-parser.add_argument('--executable',default='ImagiDock.exe',choices=('ImagiDock.exe','ImagiDock-ui.exe'))
+parser.add_argument('--executable',default='ImagiDock.exe',choices=('ImagiDock.exe','ImagiDock-ui.exe','ImagiDock-linear.exe'))
 options=parser.parse_args()
 PACKAGE=options.package.resolve()
 if not PACKAGE.is_relative_to(ROOT):raise ValueError('Test package must stay inside the workspace')
