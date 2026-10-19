@@ -1,5 +1,10 @@
 #include "MainWindow.h"
 #include "Theme.h"
+#include "UiMetrics.h"
+#include <QAbstractSlider>
+#include <QAbstractSpinBox>
+#include <QSignalBlocker>
+#include <QScreen>
 #include <QApplication>
 #include <QAbstractButton>
 #include <QResizeEvent>
@@ -49,23 +54,36 @@ namespace {QHash<QString,QPointer<LibraryTab>> draggedTabs;QSet<MainWindow*> win
 QIcon appIcon(){QPixmap p(64,64);p.fill(Qt::transparent);QPainter paint(&p);paint.setRenderHint(QPainter::Antialiasing);paint.setPen(Qt::NoPen);paint.setBrush(QColor("#67c8b6"));paint.drawRoundedRect(3,3,58,58,15,15);paint.setPen(QPen(QColor("#132b2b"),4,Qt::SolidLine,Qt::RoundCap));paint.drawLine(18,45,18,20);paint.drawLine(30,45,30,20);paint.drawLine(18,20,43,20);paint.drawLine(30,45,46,32);paint.drawLine(46,32,34,24);return QIcon(p);}
 QString stateText(const QString &s){static const QHash<QString,QString> names{{"queued",QString::fromUtf8("排队")},{"running",QString::fromUtf8("进行中")},{"completed",QString::fromUtf8("完成")},{"failed",QString::fromUtf8("失败")},{"cancelled",QString::fromUtf8("已取消")},{"interrupted",QString::fromUtf8("已中断")}};return names.value(s,s);}
 }
-DetachableTabBar::DetachableTabBar(QWidget *p):QTabBar(p){setAcceptDrops(true);setMovable(true);setElideMode(Qt::ElideRight);setDrawBase(false);}
+DetachableTabBar::DetachableTabBar(QWidget *p):QTabBar(p){setAcceptDrops(true);setMovable(true);setElideMode(Qt::ElideRight);setDrawBase(false);setExpanding(false);setObjectName("workspaceTabBar");}
 void DetachableTabBar::mousePressEvent(QMouseEvent *e){m_press=e->pos();m_index=tabAt(m_press);QTabBar::mousePressEvent(e);}
 void DetachableTabBar::mouseMoveEvent(QMouseEvent *e){if(m_index>=0&&(e->buttons()&Qt::LeftButton)&&qAbs(e->pos().y()-m_press.y())>QApplication::startDragDistance()*2){const int index=m_index;m_index=-1;auto tabs=qobject_cast<QTabWidget*>(parentWidget());if(!tabs)return;auto tab=qobject_cast<LibraryTab*>(tabs->widget(index));if(!tab)return;const QString token=QUuid::createUuid().toString();draggedTabs[token]=tab;auto drag=new QDrag(this);auto mime=new QMimeData;mime->setData("application/x-imagidock-tab",token.toUtf8());drag->setMimeData(mime);drag->setPixmap(tab->grab().scaled(260,160,Qt::KeepAspectRatio,Qt::SmoothTransformation));const auto action=drag->exec(Qt::MoveAction);if(action==Qt::IgnoreAction&&draggedTabs.contains(token))emit detached(index,QCursor::pos());draggedTabs.remove(token);return;}QTabBar::mouseMoveEvent(e);}
 void DetachableTabBar::dragEnterEvent(QDragEnterEvent *e){if(e->mimeData()->hasFormat("application/x-imagidock-tab"))e->acceptProposedAction();else QTabBar::dragEnterEvent(e);}
 void DetachableTabBar::dragMoveEvent(QDragMoveEvent *e){if(e->mimeData()->hasFormat("application/x-imagidock-tab"))e->acceptProposedAction();else QTabBar::dragMoveEvent(e);}
 void DetachableTabBar::dropEvent(QDropEvent *e){if(e->mimeData()->hasFormat("application/x-imagidock-tab")){emit tabReceived(QString::fromUtf8(e->mimeData()->data("application/x-imagidock-tab")));e->setDropAction(Qt::MoveAction);e->accept();}else QTabBar::dropEvent(e);}
 
-AssetTabs::AssetTabs(QWidget *parent):QTabWidget(parent){bar=new DetachableTabBar;setTabBar(bar);setTabsClosable(false);setMovable(true);setDocumentMode(true);bar->setDrawBase(false);}
+AssetTabs::AssetTabs(QWidget *parent):QTabWidget(parent){bar=new DetachableTabBar;setTabBar(bar);setTabsClosable(false);setMovable(true);setDocumentMode(true);bar->setDrawBase(false);setObjectName("workspaceTabs");}
 void AssetTabs::tabInserted(int index){QTabWidget::tabInserted(index);auto close=new QToolButton(bar);close->setObjectName("tabClose");close->setText(QString::fromUtf8("×"));close->setToolTip(tr("关闭页签"));close->setAccessibleName(tr("关闭页签"));close->setFixedSize(24,24);close->setFocusPolicy(Qt::StrongFocus);bar->setTabButton(index,QTabBar::RightSide,close);connect(close,&QToolButton::clicked,this,[this,close]{for(int i=0;i<count();++i)if(bar->tabButton(i,QTabBar::RightSide)==close){emit tabCloseRequested(i);break;}});}
 
 MainWindow::MainWindow(RpcClient *rpc,ThumbnailStore *thumbs,QWidget *parent):QMainWindow(parent),m_rpc(rpc),m_thumbs(thumbs){
-    windows.insert(this);setWindowFlags(Qt::Window|Qt::FramelessWindowHint|Qt::WindowSystemMenuHint|Qt::WindowMinMaxButtonsHint|Qt::WindowCloseButtonHint);setAttribute(Qt::WA_DeleteOnClose);setWindowTitle(tr("创想坞 · ImagiDock"));setWindowIcon(appIcon());resize(1440,940);setMinimumSize(960,640);m_tabs=new AssetTabs;m_tabs->setContentsMargins(18,0,18,10);setCentralWidget(m_tabs);auto plus=new QToolButton;plus->setText("＋");plus->setToolTip(tr("新建页签 · Ctrl+T"));plus->setAccessibleName(tr("新建页签"));m_tabs->setCornerWidget(plus,Qt::TopRightCorner);connect(plus,&QToolButton::clicked,this,[this]{addTab();});
-    m_titleBar=new QWidget;m_titleBar->setObjectName("windowHeader");m_titleBar->setFixedHeight(58);auto headerLayout=new QHBoxLayout(m_titleBar);headerLayout->setContentsMargins(20,8,12,6);headerLayout->setSpacing(5);auto brandIcon=new QLabel;brandIcon->setPixmap(appIcon().pixmap(24,24));brandIcon->setAttribute(Qt::WA_TransparentForMouseEvents);headerLayout->addWidget(brandIcon);auto brand=new QLabel(tr("创想坞  ·  ImagiDock"));brand->setObjectName("windowBrand");brand->setAttribute(Qt::WA_TransparentForMouseEvents);headerLayout->addWidget(brand);auto appMenu=new QMenuBar;appMenu->setNativeMenuBar(false);headerLayout->addSpacing(18);headerLayout->addWidget(appMenu);headerLayout->addStretch(1);auto minimize=new QToolButton;minimize->setText(QString::fromUtf8("−"));minimize->setToolTip(tr("最小化"));minimize->setAccessibleName(tr("最小化窗口"));minimize->setObjectName("windowButton");m_maximize=new QToolButton;m_maximize->setText(QString::fromUtf8("□"));m_maximize->setToolTip(tr("最大化"));m_maximize->setAccessibleName(tr("最大化窗口"));m_maximize->setObjectName("windowButton");auto close=new QToolButton;close->setText(QString::fromUtf8("×"));close->setToolTip(tr("关闭窗口"));close->setAccessibleName(tr("关闭窗口"));close->setObjectName("windowClose");for(auto control:{minimize,m_maximize,close}){control->setFixedSize(38,32);control->setFocusPolicy(Qt::StrongFocus);headerLayout->addWidget(control);}connect(minimize,&QToolButton::clicked,this,&QWidget::showMinimized);connect(m_maximize,&QToolButton::clicked,this,[this]{if(isMaximized())showNormal();else showMaximized();});connect(close,&QToolButton::clicked,this,&QWidget::close);setMenuWidget(m_titleBar);
+    windows.insert(this);setWindowFlags(Qt::Window|Qt::FramelessWindowHint|Qt::WindowSystemMenuHint|Qt::WindowMinMaxButtonsHint|Qt::WindowCloseButtonHint);setAttribute(Qt::WA_DeleteOnClose);setWindowTitle(tr("创想坞 · ImagiDock"));setWindowIcon(appIcon());setMinimumSize(960,640);const auto initialRoom=screen()->availableGeometry().size()-QSize(32,32);resize(QSize(1440,940).boundedTo(initialRoom).expandedTo(minimumSize()));m_tabs=new AssetTabs;m_tabs->setContentsMargins(0,0,0,0);m_tabs->installEventFilter(this);m_tabs->bar->installEventFilter(this);auto workspace=new QWidget;auto workspaceLayout=new QVBoxLayout(workspace);workspaceLayout->setContentsMargins(UiMetrics::PanelInset,0,UiMetrics::PanelInset,0);workspaceLayout->setSpacing(0);workspaceLayout->addWidget(m_tabs);setCentralWidget(workspace);auto plus=new QToolButton;plus->setText("＋");plus->setToolTip(tr("新建页签 · Ctrl+T"));plus->setAccessibleName(tr("新建页签"));plus->setFixedSize(34,34);auto tabActions=new QWidget;auto tabActionsLayout=new QHBoxLayout(tabActions);tabActionsLayout->setContentsMargins(0,0,0,8);tabActionsLayout->setSpacing(0);tabActionsLayout->addWidget(plus);m_tabs->setCornerWidget(tabActions,Qt::TopRightCorner);connect(plus,&QToolButton::clicked,this,[this]{addTab();});
+    m_titleBar=new QWidget;m_titleBar->setObjectName("windowHeader");m_titleBar->setFixedHeight(UiMetrics::HeaderHeight);m_titleBar->installEventFilter(this);auto headerLayout=new QHBoxLayout(m_titleBar);headerLayout->setContentsMargins(16,8,12,8);headerLayout->setSpacing(UiMetrics::Gap);auto brandIcon=new QLabel;brandIcon->setPixmap(appIcon().pixmap(24,24));brandIcon->setAttribute(Qt::WA_TransparentForMouseEvents);headerLayout->addWidget(brandIcon);auto brand=new QLabel(tr("创想坞  ·  ImagiDock"));brand->setObjectName("windowBrand");brand->setAttribute(Qt::WA_TransparentForMouseEvents);headerLayout->addWidget(brand);auto appMenu=new QMenuBar;appMenu->setNativeMenuBar(false);headerLayout->addSpacing(8);headerLayout->addWidget(appMenu);headerLayout->addStretch(1);
+    auto appearanceLabel=new QLabel(tr("主题"));appearanceLabel->setAttribute(Qt::WA_TransparentForMouseEvents);headerLayout->addWidget(appearanceLabel);
+    m_themeSelector=new QComboBox;m_themeSelector->setObjectName("headerTheme");m_themeSelector->setAccessibleName(tr("切换主题"));m_themeSelector->setToolTip(tr("切换四种主题；拖动顶部空白区域移动窗口"));m_themeSelector->setFixedWidth(112);
+    for(const QString id:{QString("ivory"),QString("graphite"),QString("ocean"),QString("mint")})m_themeSelector->addItem(themeColors(id).name.section(" · ",0,0),id);
+    m_themeSelector->setCurrentIndex(m_themeSelector->findData(themeColors().id));headerLayout->addWidget(m_themeSelector);headerLayout->addSpacing(8);
+    connect(m_themeSelector,&QComboBox::activated,this,[this](int index){
+        const QString id=m_themeSelector->itemData(index).toString();m_themeSelector->setEnabled(false);
+        m_rpc->call("library.settings",{{"values",QJsonObject{{"theme",id}}}},this,[this,id](const QJsonObject &,const QString &error){
+            m_themeSelector->setEnabled(true);
+            if(error.isEmpty())applyTheme(id);
+            else {QSignalBlocker blocker(m_themeSelector);m_themeSelector->setCurrentIndex(m_themeSelector->findData(themeColors().id));statusBar()->showMessage(tr("主题未保存：%1").arg(error),8000);}
+        });
+    });
+    auto minimize=new QToolButton;minimize->setText(QString::fromUtf8("−"));minimize->setToolTip(tr("最小化"));minimize->setAccessibleName(tr("最小化窗口"));minimize->setObjectName("windowButton");m_maximize=new QToolButton;m_maximize->setText(QString::fromUtf8("□"));m_maximize->setToolTip(tr("最大化"));m_maximize->setAccessibleName(tr("最大化窗口"));m_maximize->setObjectName("windowButton");auto close=new QToolButton;close->setText(QString::fromUtf8("×"));close->setToolTip(tr("关闭窗口"));close->setAccessibleName(tr("关闭窗口"));close->setObjectName("windowClose");for(auto control:{minimize,m_maximize,close}){control->setFixedSize(38,32);control->setFocusPolicy(Qt::StrongFocus);headerLayout->addWidget(control);}connect(minimize,&QToolButton::clicked,this,&QWidget::showMinimized);connect(m_maximize,&QToolButton::clicked,this,[this]{if(isMaximized())showNormal();else showMaximized();});connect(close,&QToolButton::clicked,this,&QWidget::close);setMenuWidget(m_titleBar);
     auto file=appMenu->addMenu(tr("文件"));file->addAction(tr("添加素材文件…"),this,[this]{currentTab()->importFiles();},QKeySequence::Open);file->addAction(tr("添加素材文件夹…"),this,[this]{currentTab()->importFolder();});file->addSeparator();file->addAction(tr("打开 / 新建素材库…"),this,&MainWindow::openLibrary);file->addAction(tr("导入库包…"),this,&MainWindow::importLibrary);file->addAction(tr("导出当前素材库…"),this,&MainWindow::exportLibrary);file->addSeparator();file->addAction(tr("退出"),this,[this]{exitApplication();},QKeySequence::Quit);
     auto edit=appMenu->addMenu(tr("资产"));edit->addAction(tr("备份所选"),this,[this]{currentTab()->backupSelected();});edit->addAction(tr("取用所选…"),this,[this]{currentTab()->exportSelected();});edit->addAction(tr("移到回收站"),this,[this]{currentTab()->deleteSelected();},QKeySequence::Delete);edit->addSeparator();edit->addAction(tr("管理关联标签…"),this,&MainWindow::manageRoles);
     auto view=appMenu->addMenu(tr("窗口"));view->addAction(tr("新建页签"),this,[this]{addTab();},QKeySequence::AddTab);view->addAction(tr("复制当前页签"),this,[this]{addTab(currentTab()->session());},QKeySequence("Ctrl+Shift+T"));view->addAction(tr("分离当前页签"),this,[this]{detach(m_tabs->currentIndex(),pos()+QPoint(40,40));});view->addAction(tr("新建窗口"),this,[this]{auto w=new MainWindow(m_rpc,m_thumbs);w->show();},QKeySequence("Ctrl+N"));view->addAction(tr("关闭页签"),this,[this]{const int i=m_tabs->currentIndex();auto widget=m_tabs->widget(i);m_tabs->removeTab(i);widget->deleteLater();if(!m_tabs->count())addTab();},QKeySequence::Close);view->addSeparator();view->addAction(tr("刷新"),this,[this]{m_rpc->refresh();currentTab()->refresh();},QKeySequence::Refresh);view->addAction(tr("设置…"),this,&MainWindow::showSettings,QKeySequence("Ctrl+,"));
-    auto tools=appMenu->addMenu(tr("工具"));tools->addAction(tr("后台任务"),this,&MainWindow::showJobs,QKeySequence("Ctrl+J"));tools->addAction(tr("错误中心"),this,&MainWindow::showIssues,QKeySequence("Ctrl+E"));auto help=appMenu->addMenu(tr("帮助"));help->addAction(tr("快捷操作"),this,[this]{QMessageBox::information(this,tr("快捷操作"),tr("单击：右侧信息\n双击：详情预览\nEsc / Alt+左：返回上一资产\nCtrl+T：新建页签\nCtrl+N：新建窗口\nCtrl+J：后台任务\nCtrl+E：错误中心\n拖动页签离开页签栏：分离窗口\n拖回另一窗口页签栏：合并\n图片：滚轮缩放，拖动平移\n多选筛选：同维度并集，跨维度交集"));});help->addAction(tr("关于创想坞"),this,[this]{QMessageBox::about(this,tr("创想坞 · ImagiDock"),tr("创想坞 0.1.0-rc.1\n面向创作素材的本地桌面资产管理器\nC++20 · Qt 6 · Filament\n素材索引、预览、关联与压缩备份\n所有权与第三方许可详见发行包说明。"));});
+    auto tools=appMenu->addMenu(tr("工具"));tools->addAction(tr("后台任务"),this,&MainWindow::showJobs,QKeySequence("Ctrl+J"));tools->addAction(tr("错误中心"),this,&MainWindow::showIssues,QKeySequence("Ctrl+E"));auto help=appMenu->addMenu(tr("帮助"));help->addAction(tr("快捷操作"),this,[this]{QMessageBox::information(this,tr("快捷操作"),tr("单击：右侧信息\n双击：详情预览\nEsc / Alt+左：返回上一资产\nCtrl+T：新建页签\nCtrl+N：新建窗口\nCtrl+J：后台任务\nCtrl+E：错误中心\n拖动页签离开页签栏：分离窗口\n拖回另一窗口页签栏：合并\n图片：滚轮缩放，拖动平移\n多选筛选：同维度并集，跨维度交集"));});help->addAction(tr("关于创想坞"),this,[this]{QMessageBox::about(this,tr("创想坞 · ImagiDock"),tr("创想坞 0.1.0-rc.1+ui.20261020\n面向创作素材的本地桌面资产管理器\nC++20 · Qt 6 · Filament\n素材索引、预览、关联与压缩备份\n所有权与第三方许可详见发行包说明。"));});
     auto jobs=new QPushButton(tr("后台任务"));jobs->setFlat(true);statusBar()->addPermanentWidget(jobs);connect(jobs,&QPushButton::clicked,this,&MainWindow::showJobs);auto issues=new QPushButton(tr("错误中心"));issues->setFlat(true);statusBar()->addPermanentWidget(issues);connect(issues,&QPushButton::clicked,this,&MainWindow::showIssues);statusBar()->showMessage(tr("正在连接本地素材库…"));connect(rpc,&RpcClient::connectionChanged,this,[this](bool,const QString &text){statusBar()->showMessage(text,6000);});
     connect(m_tabs,&QTabWidget::tabCloseRequested,this,[this](int index){auto tab=m_tabs->widget(index);m_tabs->removeTab(index);tab->deleteLater();if(!m_tabs->count())addTab();});connect(m_tabs->bar,&DetachableTabBar::detached,this,&MainWindow::detach);connect(m_tabs->bar,&DetachableTabBar::tabReceived,this,&MainWindow::receiveTab);
     auto searchShortcut=new QShortcut(QKeySequence::Find,this);connect(searchShortcut,&QShortcut::activated,this,[this]{currentTab()->focusSearch();});auto back=new QShortcut(QKeySequence(Qt::Key_Escape),this);connect(back,&QShortcut::activated,this,[this]{if(currentTab())currentTab()->back();});auto backAlt=new QShortcut(QKeySequence("Alt+Left"),this);connect(backAlt,&QShortcut::activated,this,[this]{if(currentTab())currentTab()->back();});
@@ -97,19 +115,22 @@ QDialog { background: qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 %2,stop:1 %3); 
 QMenuBar { background: transparent; padding: 0; border: 0; }
 QLabel#windowBrand { font-size: 14px; font-weight: 600; padding: 0 5px; }
 QWidget#windowHeader { background: transparent; }
-QToolButton#windowButton, QToolButton#windowClose { border: 0; border-radius: 9px; background: transparent; padding: 0; font-size: 18px; }
+QToolButton#windowButton, QToolButton#windowClose { border: 0; border-radius: 6px; background: transparent; padding: 0; font-size: 18px; }
 QToolButton#windowButton:hover { background: %6; } QToolButton#windowClose:hover { color: white; background: rgba(198,82,92,205); }
-QMenuBar::item { padding: 6px 14px; border-radius: 8px; } QMenuBar::item:selected { background: %4; }
-QMenu { background: %2; border: 1px solid %5; border-radius: 12px; padding: 8px; } QMenu::item { padding: 8px 22px; border-radius: 7px; } QMenu::item:selected { background: %4; }
-QToolBar { background: transparent; border: 0; padding: 12px 4px 16px 4px; spacing: 10px; }
-QToolButton, QPushButton { border: 2px solid %5; border-radius: 10px; padding: 8px 13px; background: %6; color: %1; }
+QMenuBar::item { padding: 6px 10px; border-radius: 6px; } QMenuBar::item:selected { background: %4; }
+QMenu { background: %2; border: 1px solid %5; border-radius: 8px; padding: 8px; } QMenu::item { padding: 8px 22px; border-radius: 6px; } QMenu::item:selected { background: %4; }
+QToolBar { background: transparent; border: 0; padding: 0; spacing: 8px; }
+QToolBar#libraryTools { padding: 8px 0 12px 0; }
+QToolBar::separator { width: 1px; background: %5; margin: 6px 4px; }
+QToolButton, QPushButton { border: 2px solid %5; border-radius: %13px; min-height: 18px; padding: 6px 10px; background: %6; color: %1; }
 QToolButton:hover, QPushButton:hover { background: %7; border-color: %8; }
 QToolButton:pressed, QPushButton:pressed, QPushButton:checked { background: %4; border-color: %8; }
 QPushButton:disabled, QToolButton:disabled { color: %9; background: transparent; border-color: transparent; }
 QPushButton#danger { color: %10; }
-QLineEdit, QComboBox, QSpinBox { background: %11; border: 2px solid %5; border-radius: 10px; padding: 9px 11px; color: %1; }
+QLineEdit, QComboBox, QSpinBox { background: %11; border: 2px solid %5; border-radius: %13px; min-height: 18px; padding: 6px 10px; color: %1; }
 QLineEdit:focus, QComboBox:focus, QSpinBox:focus { border-color: %8; background: %6; }
-QComboBox { min-width: 90px; } QComboBox::drop-down { border: 0; width: 20px; }
+QComboBox { min-width: 90px; }
+QComboBox#headerTheme { min-width: 0; min-height: 16px; padding: 5px 8px; } QComboBox::drop-down { border: 0; width: 20px; }
 QComboBox QAbstractItemView { background: %2; border: 1px solid %5; selection-background-color: %4; padding: 6px; }
 QListView, QTreeView, QTableView { border: 2px solid transparent; outline: 0; background: transparent; }
 QGraphicsView, QScrollArea { border: 0; background: transparent; }
@@ -119,27 +140,28 @@ QTabBar::tab:focus { border: 2px solid %1; }
 QSlider::handle:horizontal:focus { border: 2px solid %1; }
 QCheckBox { border: 2px solid transparent; border-radius: 6px; padding: 2px; } QCheckBox:focus { border-color: %1; }
 QLabel#pageTitle:focus { border: 2px solid %1; border-radius: 6px; }
-QListWidget::item, QTreeWidget::item { padding: 8px 7px; margin: 1px 0; border-radius: 8px; }
+QListWidget::item, QTreeWidget::item { padding: 6px 8px; margin: 0; border-radius: %13px; }
 QListWidget::item:selected, QTreeWidget::item:selected { background: %4; color: %1; }
 QListWidget::item:hover, QTreeWidget::item:hover { background: %6; }
 QTabWidget::pane { border: 0; background: transparent; } QTabBar { background: transparent; }
-QTabBar::tab { color: %9; background: transparent; padding: 11px 20px; margin: 3px 5px 7px 0; min-width: 104px; max-width: 240px; border: 1px solid transparent; border-radius: 11px; }
-QToolButton#tabClose { border: 0; border-radius: 7px; background: transparent; padding: 0; color: %9; font-size: 16px; } QToolButton#tabClose:hover { background: %4; color: %1; }
+QTabBar::tab { color: %9; background: transparent; height: 32px; min-height: 32px; max-height: 32px; padding: 0 16px; margin: 0 8px 8px 0; min-width: 104px; max-width: 240px; border: 1px solid transparent; border-radius: %13px; }
+QToolButton#tabClose { border: 0; border-radius: 6px; background: transparent; padding: 0; color: %9; font-size: 16px; } QToolButton#tabClose:hover { background: %4; color: %1; }
 QTabBar::tab:selected { color: %1; background: %6; border: 1px solid %5; }
-QLabel#pageTitle { font-size: 24px; font-weight: 600; padding: 2px 0 6px 0; border: 2px solid transparent; }
-QLabel#sectionTitle { font-size: 12px; font-weight: 600; color: %1; padding: 3px 0 8px 1px; }
+QLabel#pageTitle { font-size: 20px; font-weight: 600; padding: 0; border: 2px solid transparent; }
+QLabel#sectionTitle { font-size: 12px; font-weight: 600; color: %1; padding: 0; }
 QLabel#muted { color: %9; } QLabel#emptyState { color: %9; padding: 52px 22px; font-size: 14px; }
-QWidget#sidebar, QWidget#inspector { background: %12; border: 1px solid %5; border-radius: 18px; }
-QSplitter::handle { background: transparent; width: 12px; }
+QScrollArea#navigationScroll, QScrollArea#inspectorScroll, QStackedWidget#assetPages { background: %12; border: 1px solid %5; border-radius: %14px; }
+QWidget#sidebar, QWidget#inspector { background: transparent; border: 0; }
+QSplitter::handle { background: transparent; width: 8px; }
 QScrollBar:vertical { width: 8px; background: transparent; margin: 5px 0; } QScrollBar::handle:vertical { background: %5; border-radius: 4px; min-height: 36px; }
 QScrollBar:horizontal { height: 8px; background: transparent; } QScrollBar::handle:horizontal { background: %5; border-radius: 4px; min-width: 36px; }
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; } QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0; }
 QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical, QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal { background: transparent; }
-QStatusBar { background: transparent; border: 0; color: %9; padding: 5px 20px 9px 20px; }
+QStatusBar { background: transparent; border: 0; color: %9; padding: 4px 16px 8px 16px; }
 QHeaderView::section { background: %6; border: 0; border-bottom: 1px solid %5; padding: 10px; color: %9; }
 QToolTip { background: %2; color: %1; border: 1px solid %5; padding: 8px; }
-)" ).arg(t.text.name(),t.top.name(),t.bottom.name(),rgba(selected),rgba(t.edge),rgba(t.card),rgba(hover),t.accent.name(),t.muted.name(),t.light?"#9f6868":"#cb999f",rgba(input),rgba(t.panel));qApp->setStyleSheet(qss);for(auto w:windows){w->m_glassBackground=QPixmap();w->update();}}
-void MainWindow::paintEvent(QPaintEvent *event){QMainWindow::paintEvent(event);const auto t=themeColors();const auto ratio=devicePixelRatioF();if(m_glassBackground.isNull()||m_glassBackground.deviceIndependentSize().toSize()!=size()||m_backgroundTheme!=t.id){m_backgroundTheme=t.id;m_glassBackground=QPixmap(size()*ratio);m_glassBackground.setDevicePixelRatio(ratio);m_glassBackground.fill(t.bottom);QPainter painter(&m_glassBackground);painter.setRenderHint(QPainter::Antialiasing);QLinearGradient base(0,0,width()*.8,height());base.setColorAt(0,t.top);base.setColorAt(1,t.bottom);painter.fillRect(rect(),base);auto glow=[&](QPointF center,qreal radius,QColor color,int alpha){QRadialGradient gradient(center,radius);color.setAlpha(alpha);gradient.setColorAt(0,color);color.setAlpha(alpha/3);gradient.setColorAt(.45,color);color.setAlpha(0);gradient.setColorAt(1,color);painter.fillRect(rect(),gradient);};glow(QPointF(width()*.13,height()*.08),width()*.58,t.glow,t.light?155:44);glow(QPointF(width()*.75,height()*.84),width()*.58,t.glow,t.light?110:49);glow(QPointF(width()*.92,height()*.18),width()*.33,t.accent,t.light?35:15);QColor wash=Qt::white;wash.setAlpha(t.light?19:3);painter.setBrush(wash);QColor edge=t.edge;edge.setAlpha(t.light?150:31);painter.setPen(QPen(edge,1));if(!isMaximized())painter.drawRoundedRect(QRectF(rect()).adjusted(.5,.5,-.5,-.5),23,23);}QPainter painter(this);painter.drawPixmap(0,0,m_glassBackground);}
+)" ).arg(t.text.name(),t.top.name(),t.bottom.name(),rgba(selected),rgba(t.edge),rgba(t.card),rgba(hover),t.accent.name(),t.muted.name(),t.light?"#9f6868":"#cb999f",rgba(input),rgba(t.panel)).arg(UiMetrics::ControlRadius).arg(UiMetrics::PanelRadius);qApp->setStyleSheet(qss);for(auto w:windows){if(w->m_themeSelector){QSignalBlocker blocker(w->m_themeSelector);w->m_themeSelector->setCurrentIndex(w->m_themeSelector->findData(t.id));}w->m_glassBackground=QPixmap();w->update();}}
+void MainWindow::paintEvent(QPaintEvent *event){QMainWindow::paintEvent(event);const auto t=themeColors();const auto ratio=devicePixelRatioF();if(m_glassBackground.isNull()||m_glassBackground.deviceIndependentSize().toSize()!=size()||m_backgroundTheme!=t.id){m_backgroundTheme=t.id;m_glassBackground=QPixmap(size()*ratio);m_glassBackground.setDevicePixelRatio(ratio);m_glassBackground.fill(t.bottom);QPainter painter(&m_glassBackground);painter.setRenderHint(QPainter::Antialiasing);QLinearGradient base(0,0,width()*.8,height());base.setColorAt(0,t.top);base.setColorAt(1,t.bottom);painter.fillRect(rect(),base);auto glow=[&](QPointF center,qreal radius,QColor color,int alpha){QRadialGradient gradient(center,radius);color.setAlpha(alpha);gradient.setColorAt(0,color);color.setAlpha(alpha/3);gradient.setColorAt(.45,color);color.setAlpha(0);gradient.setColorAt(1,color);painter.fillRect(rect(),gradient);};glow(QPointF(width()*.13,height()*.08),width()*.58,t.glow,t.light?155:44);glow(QPointF(width()*.75,height()*.84),width()*.58,t.glow,t.light?110:49);glow(QPointF(width()*.92,height()*.18),width()*.33,t.accent,t.light?35:15);QColor wash=Qt::white;wash.setAlpha(t.light?19:3);painter.setBrush(wash);QColor edge=t.edge;edge.setAlpha(t.light?150:31);painter.setPen(QPen(edge,1));if(!isMaximized())painter.drawRoundedRect(QRectF(rect()).adjusted(.5,.5,-.5,-.5),UiMetrics::WindowRadius,UiMetrics::WindowRadius);}QPainter painter(this);painter.drawPixmap(0,0,m_glassBackground);}
 
 void MainWindow::exitApplication(){for(auto w:windows)w->m_exit=true;QSet<RpcClient*> clients;for(auto w:windows)clients.insert(w->m_rpc);auto remaining=std::make_shared<int>(clients.size());if(clients.isEmpty()){qApp->quit();return;}for(auto rpc:clients)rpc->call("service.shutdown",{{"cancel_jobs",true}},qApp,[remaining](const QJsonObject &,const QString &){if(--*remaining==0)qApp->quit();});QTimer::singleShot(4000,qApp,&QApplication::quit);}
 
@@ -150,7 +172,7 @@ void MainWindow::updateWindowShape(){
     if(!testAttribute(Qt::WA_WState_Created))return;
     const auto handle=reinterpret_cast<HWND>(winId());
     if(isMaximized())SetWindowRgn(handle,nullptr,TRUE);
-    else {const auto scale=devicePixelRatioF();auto region=CreateRoundRectRgn(0,0,qRound(width()*scale)+1,qRound(height()*scale)+1,qRound(46*scale),qRound(46*scale));if(!SetWindowRgn(handle,region,TRUE))DeleteObject(region);}
+    else {const auto scale=devicePixelRatioF();auto region=CreateRoundRectRgn(0,0,qRound(width()*scale)+1,qRound(height()*scale)+1,qRound(2*UiMetrics::WindowRadius*scale),qRound(2*UiMetrics::WindowRadius*scale));if(!SetWindowRgn(handle,region,TRUE))DeleteObject(region);}
 #endif
     update();
 }
@@ -171,12 +193,43 @@ void MainWindow::changeEvent(QEvent *event){
 #endif
     if(event->type()==QEvent::WindowStateChange||event->type()==QEvent::ScreenChangeInternal)updateWindowShape();
 }
+bool MainWindow::isCaptionPoint(const QPoint &position) const {
+    if(!rect().contains(position))return false;
+    // Interactive controls always keep their normal client input. In particular,
+    // dragging a real tab must continue to reorder/detach it, not move the window.
+    for(auto child=childAt(position);child&&child!=this;child=child->parentWidget()) {
+        if(qobject_cast<QAbstractButton*>(child)||qobject_cast<QMenuBar*>(child)||
+           qobject_cast<QComboBox*>(child)||qobject_cast<QLineEdit*>(child)||
+           qobject_cast<QAbstractSpinBox*>(child)||qobject_cast<QAbstractSlider*>(child))return false;
+        if(auto bar=qobject_cast<QTabBar*>(child))
+            if(bar->tabAt(bar->mapFrom(this,position))>=0)return false;
+    }
+    if(m_titleBar&&m_titleBar->rect().contains(m_titleBar->mapFrom(this,position)))return true;
+    if(m_tabs&&m_tabs->rect().contains(m_tabs->mapFrom(this,position))) {
+        const auto bar=m_tabs->bar;
+        const int y=bar->mapFrom(this,position).y();
+        return bar->isVisible()&&y>=0&&y<bar->height();
+    }
+    return false;
+}
+
+bool MainWindow::eventFilter(QObject *watched,QEvent *event) {
+    if(event->type()==QEvent::MouseButtonPress||event->type()==QEvent::MouseButtonDblClick) {
+        const auto mouse=static_cast<QMouseEvent*>(event);
+        if(mouse->button()==Qt::LeftButton&&isCaptionPoint(mapFromGlobal(mouse->globalPosition().toPoint()))) {
+            if(event->type()==QEvent::MouseButtonDblClick){isMaximized()?showNormal():showMaximized();return true;}
+            if(windowHandle()&&windowHandle()->startSystemMove())return true;
+        }
+    }
+    return QMainWindow::eventFilter(watched,event);
+}
+
 bool MainWindow::nativeEvent(const QByteArray &type,void *message,qintptr *result){
 #ifdef Q_OS_WIN
     const auto msg=static_cast<MSG*>(message);
     if(msg->message==WM_GETMINMAXINFO){auto bounds=reinterpret_cast<MINMAXINFO*>(msg->lParam);MONITORINFO info{};info.cbSize=sizeof(info);if(GetMonitorInfo(MonitorFromWindow(msg->hwnd,MONITOR_DEFAULTTONEAREST),&info)){bounds->ptMaxPosition={info.rcWork.left-info.rcMonitor.left,info.rcWork.top-info.rcMonitor.top};bounds->ptMaxSize={info.rcWork.right-info.rcWork.left,info.rcWork.bottom-info.rcWork.top};const auto ratio=devicePixelRatioF();bounds->ptMinTrackSize={qRound(minimumWidth()*ratio),qRound(minimumHeight()*ratio)};*result=0;return true;}}
     if(msg->message==WM_NCHITTEST){POINT point{GET_X_LPARAM(msg->lParam),GET_Y_LPARAM(msg->lParam)};ScreenToClient(msg->hwnd,&point);const auto scale=devicePixelRatioF();const QPoint local(qRound(point.x/scale),qRound(point.y/scale));if(!isMaximized()){const bool left=local.x()<7,right=local.x()>=width()-7,top=local.y()<7,bottom=local.y()>=height()-7;if(left||right||top||bottom){*result=top?(left?HTTOPLEFT:right?HTTOPRIGHT:HTTOP):bottom?(left?HTBOTTOMLEFT:right?HTBOTTOMRIGHT:HTBOTTOM):left?HTLEFT:HTRIGHT;return true;}}
-        if(m_titleBar&&m_titleBar->rect().contains(m_titleBar->mapFrom(this,local))){auto child=childAt(local);bool control=false;for(auto candidate=child;candidate&&candidate!=m_titleBar;candidate=candidate->parentWidget())if(qobject_cast<QAbstractButton*>(candidate)||qobject_cast<QMenuBar*>(candidate)){control=true;break;}if(!control){*result=HTCAPTION;return true;}}
+        if(isCaptionPoint(local)){*result=HTCAPTION;return true;}
     }
 #endif
     return QMainWindow::nativeEvent(type,message,result);

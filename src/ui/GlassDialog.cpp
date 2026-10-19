@@ -1,5 +1,6 @@
 #include "GlassDialog.h"
 #include "Theme.h"
+#include "UiMetrics.h"
 #include <QLayout>
 #include <QApplication>
 #include <QTimer>
@@ -27,7 +28,7 @@ GlassDialog::GlassDialog(QWidget *parent):QDialog(parent) {
 void GlassDialog::showEvent(QShowEvent *event) {
     if(!m_inset&&layout()) {
         const auto margins=layout()->contentsMargins();
-        layout()->setContentsMargins(qMax(18,margins.left()),margins.top()+44,qMax(18,margins.right()),qMax(18,margins.bottom()));
+        layout()->setContentsMargins(qMax(16,margins.left()),margins.top()+44,qMax(16,margins.right()),qMax(16,margins.bottom()));
         m_inset=true;
     }
     QDialog::showEvent(event);
@@ -48,7 +49,7 @@ void GlassDialog::updateShape() {
 #ifdef Q_OS_WIN
     if(testAttribute(Qt::WA_WState_Created)) {
         const auto ratio=devicePixelRatioF();
-        auto region=CreateRoundRectRgn(0,0,qRound(width()*ratio)+1,qRound(height()*ratio)+1,qRound(36*ratio),qRound(36*ratio));
+        auto region=CreateRoundRectRgn(0,0,qRound(width()*ratio)+1,qRound(height()*ratio)+1,qRound(2*UiMetrics::DialogRadius*ratio),qRound(2*UiMetrics::DialogRadius*ratio));
         if(!SetWindowRgn(reinterpret_cast<HWND>(winId()),region,TRUE))DeleteObject(region);
     }
 #endif
@@ -72,7 +73,7 @@ void GlassDialog::paintEvent(QPaintEvent *event) {
         auto color=theme.glow;color.setAlpha(theme.light?145:38);glow.setColorAt(0,color);
         color.setAlpha(0);glow.setColorAt(1,color);painter.fillRect(rect(),glow);
         painter.setPen(QPen(theme.edge,1));painter.setBrush(Qt::NoBrush);
-        painter.drawRoundedRect(QRectF(rect()).adjusted(.5,.5,-.5,-.5),18,18);
+        painter.drawRoundedRect(QRectF(rect()).adjusted(.5,.5,-.5,-.5),UiMetrics::DialogRadius,UiMetrics::DialogRadius);
     }
     QPainter painter(this);painter.drawPixmap(0,0,m_background);
     auto font=painter.font();font.setBold(true);font.setPixelSize(13);painter.setFont(font);

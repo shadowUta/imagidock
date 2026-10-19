@@ -11,9 +11,22 @@ struct ApplicationCapture {
     QString error;
 };
 
+// Only used by explicit self-test/smoke commands, on their own transient window.
+inline void foregroundApplicationTestWindow(QWidget *widget) {
+    if(!widget)return;
+#ifdef Q_OS_WIN
+    SetWindowPos(reinterpret_cast<HWND>(widget->winId()),HWND_TOPMOST,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE);
+#endif
+    widget->raise();
+    widget->activateWindow();
+}
+
 // Test-only capture: never save pixels belonging to a lock screen or another app.
 inline ApplicationCapture captureApplicationWidget(QWidget *widget,bool exactNativeTarget=false) {
     if(!widget||!widget->isVisible()||!widget->screen())return {{},QStringLiteral("capture_blocked: target is not visible")};
+    const QRect logicalBounds(widget->mapToGlobal(QPoint()),widget->size());
+    if(!widget->screen()->geometry().contains(logicalBounds))
+        return {{},QStringLiteral("capture_blocked: target extends outside its screen")};
 #ifdef Q_OS_WIN
     const auto top=reinterpret_cast<HWND>(widget->window()->winId());
     const auto target=exactNativeTarget?reinterpret_cast<HWND>(widget->winId()):nullptr;

@@ -5,6 +5,7 @@
 #include <QTabWidget>
 class QSystemTrayIcon;
 class QToolButton;
+class QComboBox;
 
 class DetachableTabBar : public QTabBar {
     Q_OBJECT
@@ -35,6 +36,7 @@ protected: void closeEvent(QCloseEvent *) override;
     void resizeEvent(QResizeEvent *) override;
     void changeEvent(QEvent *) override;
     bool nativeEvent(const QByteArray &,void *,qintptr *) override;
+    bool eventFilter(QObject *,QEvent *) override;
 private:
     RpcClient *m_rpc;ThumbnailStore *m_thumbs;AssetTabs *m_tabs;QSystemTrayIcon *m_tray;
     QPointer<QDialog> m_jobs,m_issues;bool m_exit=false;int m_activeJobs=0;
@@ -43,6 +45,8 @@ private:
     void exitApplication();
     QPixmap m_glassBackground;QString m_backgroundTheme;
     QWidget *m_titleBar=nullptr;QToolButton *m_maximize=nullptr;
+    QComboBox *m_themeSelector=nullptr;
     QRect m_normalBeforeMaximize;
     void updateWindowShape();
+    bool isCaptionPoint(const QPoint &position) const;
 };

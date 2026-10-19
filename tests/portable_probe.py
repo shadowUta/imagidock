@@ -39,6 +39,7 @@ def validate_ui_report(data):
 
 parser=argparse.ArgumentParser()
 parser.add_argument('--package',type=Path,default=ROOT/'dist/ImagiDock-0.1.0-rc.1-win-x64')
+parser.add_argument('--executable',default='ImagiDock.exe',choices=('ImagiDock.exe','ImagiDock-ui.exe'))
 options=parser.parse_args()
 PACKAGE=options.package.resolve()
 if not PACKAGE.is_relative_to(ROOT):raise ValueError('Test package must stay inside the workspace')
@@ -51,7 +52,7 @@ def package_state():
 before=package_state()
 report=WORK/'ui-result.json'
 with (WORK/'ui.log').open('wb') as log:
-    process=subprocess.Popen([str(PACKAGE/'ImagiDock.exe'),'--self-test','--library',str(WORK/'library'),'--test-report',str(report),'--screenshot',str(WORK/'window.png')],cwd=WORK,env=env,stdout=log,stderr=log)
+    process=subprocess.Popen([str(PACKAGE/options.executable),'--self-test','--library',str(WORK/'library'),'--test-report',str(report),'--screenshot',str(WORK/'window.png')],cwd=WORK,env=env,stdout=log,stderr=log)
     try: code=process.wait(timeout=120)
     finally:
         # This dedicated library identifies only the service owned by this probe.
@@ -71,6 +72,6 @@ for executable,args in [(PACKAGE/'python/python.exe',['-B','-c','import PIL,psd_
                         (PACKAGE/'runtime/node/node.exe',['--version'])]:
     subprocess.run([str(executable),*args],cwd=WORK,env=env,check=True,capture_output=True,timeout=20)
 if package_state()!=before:raise RuntimeError('Portable probe changed the package')
-result={'ok':True,'scope':'local Windows machine with development PATH, Python, Node and Qt environment removed; not an independent clean OS','ui_report':data,'package_unchanged':True,'package':str(PACKAGE),'work':str(WORK)}
+result={'ok':True,'scope':'local Windows machine with development PATH, Python, Node and Qt environment removed; not an independent clean OS','ui_report':data,'package_unchanged':True,'package':str(PACKAGE),'executable':options.executable,'work':str(WORK)}
 (ROOT/'logs/portable-probe.json').write_text(json.dumps(result,ensure_ascii=False,indent=2),encoding='utf-8')
 print(json.dumps({'ok':True,'assertions':len(data.get('assertions',[])),'scope':result['scope']},ensure_ascii=False))
