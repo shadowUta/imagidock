@@ -11,10 +11,23 @@
 #include <QImageReader>
 #include <QMimeData>
 #include <QPainter>
+#include <QPainterPath>
+#include <QResizeEvent>
 #include <QScrollBar>
 #include <QTimer>
 #include <QtConcurrent>
 #include <algorithm>
+
+namespace {
+class GridScrollBar final : public QScrollBar {
+public:
+    explicit GridScrollBar(QWidget *parent):QScrollBar(Qt::Vertical,parent){setAutoFillBackground(false);}
+protected:
+    void paintEvent(QPaintEvent *event) override{
+        if(maximum()>minimum())QScrollBar::paintEvent(event);
+    }
+};
+}
 
 ThumbnailStore::ThumbnailStore(RpcClient *rpc,QObject *parent):QObject(parent),m_rpc(rpc),m_cache(256*1024){}
 void ThumbnailStore::clear(){m_cache.clear();m_retryAt.clear();}
@@ -50,56 +63,94 @@ void AssetDelegate::paint(QPainter *p,const QStyleOptionViewItem &o,const QModel
     p->save();p->setRenderHint(QPainter::Antialiasing);
     const auto a=i.data(AssetModel::AssetRole).toJsonObject();
     const bool selected=o.state&QStyle::State_Selected,hover=o.state&QStyle::State_MouseOver,focused=o.state&QStyle::State_HasFocus;
-    const auto theme=themeColors();const QRect card=o.rect.adjusted(4,4,-4,-4);
+    const auto theme=themeColors();const QRectF card=QRectF(o.rect).adjusted(4,4,-4,-4);
+    if(card.width()<=0||card.height()<=0){p->restore();return;}
     QColor surface=selected?theme.accent:theme.card;
     surface.setAlpha(selected?(theme.light?40:36):(theme.light?(hover?126:104):(hover?23:14)));
     p->setPen(Qt::NoPen);p->setBrush(surface);p->drawRoundedRect(card,UiMetrics::CardRadius,UiMetrics::CardRadius);
 
-    // One quiet boundary separates the full-image preview from its metadata.
-    QColor divider=theme.edge;divider.setAlpha(theme.light?112:28);
-    p->setPen(QPen(divider,1));p->drawLine(card.left()+12,card.bottom()-54,card.right()-12,card.bottom()-54);
-    const QRect image=card.adjusted(10,10,-10,-66);
+    // The preview touches the card edges; only its source aspect ratio can leave space.
+    const QRectF image(card.topLeft(),QSizeF(card.width(),card.width()));
+    QPainterPath cardClip;cardClip.addRoundedRect(card,UiMetrics::CardRadius,UiMetrics::CardRadius);
+    p->save();p->setClipPath(cardClip,Qt::IntersectClip);
     const QPixmap pix=i.data(Qt::DecorationRole).value<QPixmap>();
     if(!pix.isNull()){
-        const QSize fitted=pix.size().scaled(image.size()-QSize(8,8),Qt::KeepAspectRatio);
-        const QRect dest(image.center()-QPoint(fitted.width()/2,fitted.height()/2),fitted);
-        p->setRenderHint(QPainter::SmoothPixmapTransform);p->drawPixmap(dest,pix);
+        const QSizeF fitted=QSizeF(pix.size()).scaled(image.size(),Qt::KeepAspectRatio);
+        const QRectF dest(image.center()-QPointF(fitted.width()/2,fitted.height()/2),fitted);
+        p->setRenderHint(QPainter::SmoothPixmapTransform);p->drawPixmap(dest,pix,QRectF(pix.rect()));
     }else{
-        p->setPen(theme.muted);QFont f=o.font;f.setPointSize(22);p->setFont(f);
+        p->setPen(theme.muted);QFont f=o.font;f.setPixelSize(28);p->setFont(f);
         const QString type=a["type"].toString();
         const QString symbol=type=="model"?QString::fromUtf8("◇"):type=="audio"?QString::fromUtf8("∿"):type=="video"?QString::fromUtf8("▷"):QString::fromUtf8("▧");
         p->drawText(image,Qt::AlignCenter,symbol);
     }
+    p->restore();
 
-    p->setFont(o.font);p->setPen(theme.text);
-    const QRect name(card.left()+12,card.bottom()-44,card.width()-24,20);
-    p->drawText(name,Qt::AlignVCenter,o.fontMetrics.elidedText(a["name"].toString(),Qt::ElideMiddle,name.width()));
-    QFont small=o.font;small.setPointSizeF(qMax(8.,small.pointSizeF()-1));p->setFont(small);p->setPen(theme.muted);
+    const qreal metadataTop=image.bottom();
+    QFont title=o.font;title.setPixelSize(16);title.setWeight(QFont::Bold);
+    p->setFont(title);p->setPen(theme.text);
+    const QRectF name(card.left()+12,metadataTop+10,qMax(0.,card.width()-24),24);
+    p->drawText(name,Qt::AlignLeft|Qt::AlignVCenter,QFontMetrics(title).elidedText(a["name"].toString(),Qt::ElideMiddle,int(name.width())));
+    QFont small=o.font;small.setPixelSize(11);small.setWeight(QFont::Normal);p->setFont(small);p->setPen(theme.muted);
     QString label=a["extension"].toString().toUpper();const QString backup=a["backup_state"].toString();
     if(a["missing"].toBool())label+=QString::fromUtf8("  ·  来源丢失");
     else if(backup=="ready")label+=QString::fromUtf8("  ·  已备份");
     else if(backup=="stale")label+=QString::fromUtf8("  ·  备份过期");
     if(a["missing"].toBool()||backup=="ready"||backup=="stale")p->setPen(theme.text);
-    const QRect status(card.left()+12,card.bottom()-24,card.width()-24,19);
-    p->drawText(status,Qt::AlignLeft|Qt::AlignVCenter,p->fontMetrics().elidedText(label,Qt::ElideRight,status.width()));
-    if(a["favorite"].toBool()){
-        p->setPen(QColor("#edc778"));p->drawText(image.adjusted(6,3,-5,-4),Qt::AlignTop|Qt::AlignRight,QString::fromUtf8("★"));
+    const bool favorite=a["favorite"].toBool();
+    const QRectF status(card.left()+12,metadataTop+36,qMax(0.,card.width()-24-(favorite?20:0)),17);
+    p->drawText(status,Qt::AlignLeft|Qt::AlignVCenter,p->fontMetrics().elidedText(label,Qt::ElideRight,int(status.width())));
+    if(favorite){
+        p->setPen(QColor("#edc778"));p->drawText(QRectF(card.right()-28,metadataTop+36,16,17),Qt::AlignCenter,QString::fromUtf8("★"));
     }
 
     // A local marker keeps keyboard focus visible without framing the whole card.
     if(selected||focused){
         QColor marker=theme.accent;marker.setAlpha(focused?255:190);
         p->setPen(QPen(marker,3,Qt::SolidLine,Qt::RoundCap));
-        p->drawLine(QPointF(card.left()+12,card.top()+6),
-                    QPointF(card.left()+(focused?36:28),card.top()+6));
+        p->drawLine(QPointF(card.left()+5,metadataTop+15),
+                    QPointF(card.left()+5,metadataTop+(focused?34:29)));
     }
     p->restore();
 }
-AssetGrid::AssetGrid(QWidget *p):QListView(p),m_delegate(new AssetDelegate(this)){setObjectName("assetGrid");setAccessibleName(tr("素材卡片列表"));setAccessibleDescription(tr("方向键选择素材，Enter 打开详情；Ctrl 或 Shift 多选。"));setViewMode(IconMode);setResizeMode(Adjust);setMovement(Static);setWrapping(true);setUniformItemSizes(true);setLayoutMode(Batched);setBatchSize(80);setSelectionMode(ExtendedSelection);setVerticalScrollMode(ScrollPerPixel);setMouseTracking(true);setSpacing(0);setAcceptDrops(true);setDragEnabled(false);setItemDelegate(m_delegate);setCardSize(176);}
-void AssetGrid::setCardSize(int size){m_delegate->setCardSize(size);setGridSize({size,size+58});doItemsLayout();}
+AssetGrid::AssetGrid(QWidget *p):QListView(p),m_delegate(new AssetDelegate(this)){setObjectName("assetGrid");setAccessibleName(tr("素材卡片列表"));setAccessibleDescription(tr("方向键选择素材，Enter 打开详情；Ctrl 或 Shift 多选。"));setViewMode(IconMode);setResizeMode(Adjust);setMovement(Static);setWrapping(true);setUniformItemSizes(true);setLayoutMode(Batched);setBatchSize(80);setSelectionMode(ExtendedSelection);setVerticalScrollMode(ScrollPerPixel);setVerticalScrollBar(new GridScrollBar(this));setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOn);setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);setMouseTracking(true);setSpacing(0);setAcceptDrops(true);setDragEnabled(false);setItemDelegate(m_delegate);setCardSize(176);}
+void AssetGrid::setCardSize(int size){m_preferredCardSize=qBound(96,size,512);updateGridLayout();}
+void AssetGrid::scheduleGridLayout(){
+    if(m_layoutQueued)return;
+    m_layoutQueued=true;
+    QTimer::singleShot(0,this,[this]{m_layoutQueued=false;updateGridLayout();});
+}
+void AssetGrid::updateGridLayout(){
+    // A permanent transparent scrollbar track keeps card widths stable as
+    // content crosses the scrolling threshold. Include previous centering
+    // margins so their remainder never feeds back into the next calculation.
+    const QMargins previous=viewportMargins();
+    const int available=qMax(1,viewport()->width()+previous.left()+previous.right());
+    // Qt's IconMode compares x + gridWidth with bounds.right() (inclusive).
+    // Keep one pixel in the viewport beyond the final cell, or an exact fit
+    // wraps that cell to the next row and can create a 1 px horizontal range.
+    const int layoutWidth=available-(available>1?1:0);
+    const int columns=qMax(1,layoutWidth/(m_preferredCardSize+8));
+    const int cellWidth=qMax(1,layoutWidth/columns);
+    const int remainder=layoutWidth-cellWidth*columns;
+    const QMargins margins(remainder/2,0,remainder-remainder/2,0);
+    const QSize cell(cellWidth,cellWidth+64);
+    const bool changed=columns!=m_columns||cell!=gridSize()||margins!=previous;
+    if(!changed)return;
+    m_columns=columns;
+    m_delegate->setCardSize(cellWidth);
+    if(margins!=previous)setViewportMargins(margins);
+    if(cell!=gridSize())setGridSize(cell);
+    doItemsLayout();
+    // Let a pending viewport geometry change settle on the next event turn.
+    const QMargins current=viewportMargins();
+    if(viewport()->width()+current.left()+current.right()!=available)scheduleGridLayout();
+}
+void AssetGrid::resizeEvent(QResizeEvent *event){QListView::resizeEvent(event);scheduleGridLayout();}
+bool AssetGrid::viewportEvent(QEvent *event){const bool resized=event->type()==QEvent::Resize;const bool handled=QListView::viewportEvent(event);if(resized)scheduleGridLayout();return handled;}
 void AssetGrid::dragEnterEvent(QDragEnterEvent *e){if(e->mimeData()->hasUrls())e->acceptProposedAction();else QListView::dragEnterEvent(e);}
 void AssetGrid::dragMoveEvent(QDragMoveEvent *e){if(e->mimeData()->hasUrls())e->acceptProposedAction();else QListView::dragMoveEvent(e);}
 void AssetGrid::dropEvent(QDropEvent *e){if(e->mimeData()->hasUrls()){QStringList paths;for(const auto &u:e->mimeData()->urls())if(u.isLocalFile())paths<<u.toLocalFile();emit filesDropped(paths);e->acceptProposedAction();}else QListView::dropEvent(e);}
-void AssetGrid::paintEvent(QPaintEvent *event){QElapsedTimer timer;if(m_measure){timer.start();if(m_frameClock.isValid())m_frameSamples.append(m_frameClock.nsecsElapsed()/1000000.);m_frameClock.restart();}QListView::paintEvent(event);if(!model()||gridSize().height()<1)return;const int columns=qMax(1,viewport()->width()/gridSize().width()),row=verticalScrollBar()->value()/gridSize().height();const int first=qMax(0,(row-1)*columns),last=qMin(model()->rowCount(),(row+(viewport()->height()*2)/gridSize().height()+2)*columns);for(int i=first;i<last;++i)model()->index(i,0).data(Qt::DecorationRole);if(m_measure&&m_paintSamples.size()<10000)m_paintSamples.append(timer.nsecsElapsed()/1000000.);}
+void AssetGrid::paintEvent(QPaintEvent *event){QElapsedTimer timer;if(m_measure){timer.start();if(m_frameClock.isValid())m_frameSamples.append(m_frameClock.nsecsElapsed()/1000000.);m_frameClock.restart();}QListView::paintEvent(event);if(!model()||gridSize().height()<1)return;const int row=verticalScrollBar()->value()/gridSize().height();const int first=qMax(0,(row-1)*m_columns),last=qMin(model()->rowCount(),(row+(viewport()->height()*2)/gridSize().height()+2)*m_columns);for(int i=first;i<last;++i)model()->index(i,0).data(Qt::DecorationRole);if(m_measure&&m_paintSamples.size()<10000)m_paintSamples.append(timer.nsecsElapsed()/1000000.);}
 void AssetGrid::beginMeasurement(){m_paintSamples.clear();m_frameSamples.clear();m_frameClock.invalidate();m_measure=true;}
 QJsonObject AssetGrid::timingReport()const{auto summarize=[](QVector<double> values){if(values.isEmpty())return QJsonObject{};std::sort(values.begin(),values.end());double total=0;for(auto v:values)total+=v;return QJsonObject{{"count",values.size()},{"mean_ms",total/values.size()},{"p50_ms",values[(values.size()-1)/2]},{"p95_ms",values[qMin(values.size()-1,qsizetype(values.size()*.95))]},{"max_ms",values.last()}};};return {{"paint_cpu",summarize(m_paintSamples)},{"paint_event_intervals",summarize(m_frameSamples)}};}

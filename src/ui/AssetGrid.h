@@ -49,7 +49,7 @@ class AssetDelegate : public QStyledItemDelegate {
 public:
     explicit AssetDelegate(QObject *parent=nullptr):QStyledItemDelegate(parent){}
     void paint(QPainter *p,const QStyleOptionViewItem &option,const QModelIndex &index) const override;
-    QSize sizeHint(const QStyleOptionViewItem &,const QModelIndex &) const override { return {m_size,m_size+58}; }
+    QSize sizeHint(const QStyleOptionViewItem &,const QModelIndex &) const override { return {m_size,m_size+64}; }
     void setCardSize(int size){m_size=size;}
 private: int m_size=176;
 };
@@ -67,5 +67,14 @@ protected:
     void dragMoveEvent(QDragMoveEvent *) override;
     void dropEvent(QDropEvent *) override;
     void paintEvent(QPaintEvent *) override;
-private: AssetDelegate *m_delegate;bool m_measure=false;QElapsedTimer m_frameClock;QVector<double> m_paintSamples,m_frameSamples;
+    void resizeEvent(QResizeEvent *) override;
+    bool viewportEvent(QEvent *) override;
+private:
+    void scheduleGridLayout();
+    void updateGridLayout();
+    AssetDelegate *m_delegate;
+    int m_preferredCardSize=176,m_columns=1;
+    bool m_layoutQueued=false,m_measure=false;
+    QElapsedTimer m_frameClock;
+    QVector<double> m_paintSamples,m_frameSamples;
 };

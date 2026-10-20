@@ -65,6 +65,18 @@ QtTest 离屏检查获得 **21 passed、0 failed、0 skipped**，含初始化／
 
 早期检查漏掉选中分支实心底色，图像审查发现后补强测试并复现 4 项失败，最终修复。修复前回执保留于 `logs/inspector-v5-tree-regression-before.txt`、XML，失败结果不并入成功记录。离屏环境的字体目录和 `propagateSizeHints` 提示保留；中文字体只读加载，四主题图已目检无缺字。离屏结果不作为实屏或便携全回归证明，v3 的两档 517 项严格结果保持原版本范围。按用户要求，不重复启动可见验收窗口，完成后只打开一次正常新版供人工验收；原 RC 程序和已发布 ZIP 保持。
 
+### 2026-10-20 Linear v6 素材网格
+
+本地版本为 `0.1.0-rc.1+linear.20261020.6`，入口为 `ImagiDock-linear-v6.exe`。本轮调整网格按可用宽度分配卡片，减少横向空白；预览区域贴齐卡片顶边及左右边界，内容等比完整显示且保留透明度；资产名使用 16 px 粗体，次要信息维持浅色。四主题玻璃及上一轮取消整体方框的样式保持。
+
+Release 应用构建成功，回执为 `logs/linear-v6-final-build.log`。新网格组件检查在 `QT_QPA_PLATFORM=offscreen` 下分别设置 `QT_SCALE_FACTOR=1` 和 `1.5`，各获得 **17 passed、0 failed、0 skipped**，含初始化／清理，耗时分别为 20.980／21.004 秒。回执为 `logs/grid-v6-tests-100.txt`、`logs/grid-v6-tests-100.xml` 和 `logs/grid-v6-tests-150.txt`、`logs/grid-v6-tests-150.xml`。
+
+检查覆盖 128／176／256／320 目标卡片尺寸与 12／200 项记录，视口从 420、750、1000、1280、1003 逻辑像素再缩回，核对真实 `visualRect`／`indexAt`、像素行间距 8 px 和完整行左右余量；验证 Right／Down 导航、Enter 打开、空／单资产，以及滚动阈值附近 15 个高度的有界稳定。方形／宽图／竖图／透明合成预览核对贴边区域、完整角标和透明背景无棋盘。四主题联系表及实际视口 PNG 保存在 `logs/grid-v6-offscreen-100/`、`logs/grid-v6-offscreen-150/`；四主题联系表和冰青／石墨黑视口图已目检。离屏字体目录提示保留，系统中文字体只读加载，已审阅图像无缺字。
+
+首轮实际捕获 8 项失败，确认 Qt 包含式右边界导致末列换行，加入 1 px 布局保护量后又捕获 5 项失败，确认自动滚动条布局重复扣宽及占位显示竞争。最终使用固定透明轨道，滚动范围为零时不绘制滚动条。修复前的 `logs/grid-v6-reflow-before.txt`／XML 和 `logs/grid-v6-scrollbar-reserve-before.txt`／XML 均保留，失败结果不并入通过记录。
+
+本轮使用合成素材离屏检查，不触用户库，不作为实际桌面呈现或完整便携回归证明；v5 的 21 项和 v3 的 517 项结果保留各自历史范围。按用户要求，完成后只打开一次正常 v6 的默认库网格供人工验收，不重复启动可见测试窗口，也不关闭其他已打开的版本。
+
 ## 构建与运行环境
 
 本机 Windows x64 Release 已编译桌面程序、库服务、Filament 渲染助手、SAI1 助手和 Qt 媒体助手，支持中文工作区路径。主要组件为 Qt 6.8.3、Filament 1.78.0、Assimp 5.4.3、SQLite 3.50.4、Zstandard 1.5.7；3D 验证使用 RTX 4070 Ti / OpenGL。
