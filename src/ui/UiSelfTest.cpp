@@ -34,6 +34,7 @@
 #include <QSet>
 #include "../render/ModelView.h"
 #include <QApplication>
+#include <QEventLoop>
 #include <QDataStream>
 #include <QDir>
 #include <QFileInfo>
@@ -82,7 +83,12 @@ struct State : public QObject {
         for(int i=0;i<names.size();++i){QFile source(directory+"/"+names[i]);if(source.open(QIODevice::ReadWrite))source.setFileTime(QDateTime::fromMSecsSinceEpoch(1700000000000LL+i*60000,Qt::UTC),QFileDevice::FileModificationTime);}
         return directory;
     }
-    void start(){initialGeometry=window->geometry();recordWindowState("initial");foreground(window);if(!check("frameless_window_flag",window->windowFlags().testFlag(Qt::FramelessWindowHint)))return;
+    void positionTestWindowInWorkArea(){
+        const auto available=window->screen()->availableGeometry();const auto room=available.adjusted(16,16,-16,-16);
+        const auto size=window->size().boundedTo(room.size());
+        window->setGeometry(QRect(QPoint(room.left()+(room.width()-size.width())/2,room.top()+(room.height()-size.height())/2),size));
+    }
+    void start(){recordWindowState("startup_before_test_placement");positionTestWindowInWorkArea();initialGeometry=window->geometry();recordWindowState("initial");foreground(window);if(!check("self_test_start_window_fits_work_area",window->screen()->availableGeometry().contains(window->frameGeometry())))return;if(!check("frameless_window_flag",window->windowFlags().testFlag(Qt::FramelessWindowHint)))return;
 #ifdef Q_OS_WIN
 const auto handle=reinterpret_cast<HWND>(window->winId());RECT rectangle{};GetWindowRect(handle,&rectangle);const auto region=CreateRectRgn(0,0,0,0);const bool rounded=GetWindowRgn(handle,region)!=ERROR&&!PtInRegion(region,0,0);DeleteObject(region);if(!check("native_window_has_round_region",rounded))return;const auto edge=SendMessage(handle,WM_NCHITTEST,0,MAKELPARAM(rectangle.left+2,(rectangle.top+rectangle.bottom)/2));const auto brand=window->findChild<QLabel*>("windowBrand");const auto brandLocal=brand->mapTo(window,brand->rect().center());POINT brandPoint{qRound(brandLocal.x()*window->devicePixelRatioF()),qRound(brandLocal.y()*window->devicePixelRatioF())};ClientToScreen(handle,&brandPoint);const auto caption=SendMessage(handle,WM_NCHITTEST,0,MAKELPARAM(brandPoint.x,brandPoint.y));if(!check("native_resize_and_caption_hit_regions",edge==HTLEFT&&caption==HTCAPTION))return;
 #endif
@@ -236,9 +242,28 @@ call("library.info",{},[this](const QJsonObject &r){if(!check("dedicated_empty_l
             nativePresentations.append(QJsonObject{{"name",presentName},{"skipped",true},{"reason","functional-only mode: framebuffer readback is checked; desktop presentation is not captured or validated"},{"framebuffer_file",QFileInfo(path).fileName()}});
             return true;
         }
+        QElapsedTimer captureTraceClock;captureTraceClock.start();
         const auto capture=captureApplicationWidget(model,true);
         if(!capture.error.isEmpty()){finish(false,capture.error);return false;}
         const auto screen=capture.image.toImage();const QString path=QFileInfo(report).absolutePath()+"/"+fileName;
+        if(qEnvironmentVariableIntValue("IMAGIDOCK_CAPTURE_TRACE")==1){
+            QPointer<ModelView> target=model;
+            auto recordTrace=[this,&captureTraceClock,&path,&presentName](int index,const ApplicationCapture &sample){
+                const auto pixels=sample.image.toImage().convertToFormat(QImage::Format_RGB32);int minimum[3]{255,255,255},maximum[3]{0,0,0};qint64 nonblack=0;
+                for(int y=0;y<pixels.height();++y){const auto line=reinterpret_cast<const QRgb*>(pixels.constScanLine(y));for(int x=0;x<pixels.width();++x){const int values[3]{qRed(line[x]),qGreen(line[x]),qBlue(line[x])};nonblack+=values[0]||values[1]||values[2];for(int component=0;component<3;++component){minimum[component]=qMin(minimum[component],values[component]);maximum[component]=qMax(maximum[component],values[component]);}}}
+                const auto file=path+QString("-capture-trace-%1.png").arg(index);const bool saved=!pixels.isNull()&&pixels.save(file);
+                layoutDiagnostics.append(QJsonObject{{"name",presentName+QString("_capture_trace_%1").arg(index)},{"capture_trace",true},{"scope","guarded model desktop before any saveSnapshot; diagnostic only"},{"sample_index",index},{"offset_ms",captureTraceClock.elapsed()},{"width",pixels.width()},{"height",pixels.height()},{"rgb_min",pixels.isNull()?QJsonArray{-1,-1,-1}:QJsonArray{minimum[0],minimum[1],minimum[2]}},{"rgb_max",pixels.isNull()?QJsonArray{-1,-1,-1}:QJsonArray{maximum[0],maximum[1],maximum[2]}},{"nonblack_pixels",nonblack},{"file",saved?QFileInfo(file).fileName():QString()},{"error",sample.error}});
+            };
+            recordTrace(0,capture);
+            for(int index=1;index<=2;++index){
+                if(!target){finish(false,"capture trace target disappeared before model readback");return false;}
+                target->update();target->window()->update();QCoreApplication::sendPostedEvents(nullptr,QEvent::UpdateRequest);
+                QEventLoop paintEvents;QTimer::singleShot(100,&paintEvents,&QEventLoop::quit);paintEvents.exec(QEventLoop::ExcludeUserInputEvents);
+                if(done)return false;
+                if(!target){finish(false,"capture trace target disappeared while processing paint events");return false;}
+                recordTrace(index,captureApplicationWidget(target,true));
+            }
+        }
         if(!check(frameName,model&&model->isVisible()&&model->saveSnapshot(path+".png")))return false;
         const QImage reference(path+".png");double difference=0,foregroundDifference=0;int samples=0,foregroundPixels=0;
         // Qt screen capture rounds fractional device pixels up, while Filament's viewport uses integer dimensions.
@@ -318,7 +343,7 @@ call("library.info",{},[this](const QJsonObject &r){if(!check("dedicated_empty_l
         nativePresentations.append(QJsonObject{{"name",presentName},{"native_client_size",nativeClient},{"foreground_pixels",foregroundPixels},{"mean_rgb_error",samples?difference/samples:-1.},{"foreground_mean_rgb_error",foregroundPixels?foregroundDifference/(foregroundPixels*3.):-1.},{"width",reference.width()},{"height",reference.height()},{"capture_width",screen.width()},{"capture_height",screen.height()},{"pixel_bounds_aligned",aligned},{"model_diagnostics",model->diagnostics()},{"widget_ancestors",widgetAncestors},{"native_window",nativeWindow},{"native_parent_chain",nativeParentChain}});
         return check(presentName,samples>0&&foregroundPixels>100&&difference/samples<10.&&foregroundDifference/(foregroundPixels*3.)<10.);
     }
-    void recordWindowState(const QString &name){auto rect=[](const QRect &r){return QJsonArray{r.x(),r.y(),r.width(),r.height()};};windowStatesReport.append(QJsonObject{{"name",name},{"state",int(window->windowState())},{"flags",double(quint64(window->windowFlags()))},{"geometry",rect(window->geometry())},{"normal_geometry",rect(window->normalGeometry())}});}
+    void recordWindowState(const QString &name){auto rect=[](const QRect &r){return QJsonArray{r.x(),r.y(),r.width(),r.height()};};windowStatesReport.append(QJsonObject{{"name",name},{"state",int(window->windowState())},{"flags",double(quint64(window->windowFlags()))},{"geometry",rect(window->geometry())},{"normal_geometry",rect(window->normalGeometry())},{"frame_geometry",rect(window->frameGeometry())},{"available_geometry",rect(window->screen()->availableGeometry())},{"device_pixel_ratio",window->devicePixelRatioF()}});}
     void clickMaximize(){for(auto button:window->findChildren<QToolButton*>())if(button->accessibleName()==QString::fromUtf8("最大化窗口")||button->accessibleName()==QString::fromUtf8("还原窗口")){button->click();return;}}
     void captionDoubleClick(){
 #ifdef Q_OS_WIN
@@ -326,33 +351,38 @@ call("library.info",{},[this](const QJsonObject &r){if(!check("dedicated_empty_l
 #endif
     }
     void windowStates(){
-        recordWindowState("before_titlebar_maximize");clickMaximize();
-        QTimer::singleShot(400,this,[this]{
-            recordWindowState("titlebar_maximized");if(!check("titlebar_button_maximizes",window->isMaximized()))return;
-            clickMaximize();QTimer::singleShot(400,this,[this]{
-                recordWindowState("titlebar_restored");if(!check("titlebar_button_restores_original_geometry",!window->isMaximized()&&!window->isMinimized()&&window->geometry()==initialGeometry))return;
-                captionDoubleClick();QTimer::singleShot(400,this,[this]{
-                    recordWindowState("caption_doubleclick_maximized");if(!check("titlebar_doubleclick_maximizes",window->isMaximized()))return;
-                    captionDoubleClick();QTimer::singleShot(400,this,[this]{
-                        recordWindowState("caption_doubleclick_restored");if(!check("titlebar_doubleclick_restores_original_geometry",!window->isMaximized()&&window->geometry()==initialGeometry))return;
-                        renderWindowStates();
+        recordWindowState("before_window_state_test_placement");positionTestWindowInWorkArea();foreground(window);
+        QTimer::singleShot(250,this,[this]{
+            if(!check("window_state_test_setup_fits_work_area",window->screen()->availableGeometry().contains(window->frameGeometry())))return;
+            const auto buttonBaseline=window->geometry();recordWindowState("before_titlebar_maximize");clickMaximize();
+            QTimer::singleShot(400,this,[this,buttonBaseline]{
+                recordWindowState("titlebar_maximized");if(!check("titlebar_button_maximizes",window->isMaximized()))return;
+                clickMaximize();QTimer::singleShot(400,this,[this,buttonBaseline]{
+                    recordWindowState("titlebar_restored");if(!check("titlebar_button_restores_original_geometry",!window->isMaximized()&&!window->isMinimized()&&window->geometry()==buttonBaseline))return;
+                    const auto captionBaseline=window->geometry();recordWindowState("before_caption_doubleclick");captionDoubleClick();
+                    QTimer::singleShot(400,this,[this,captionBaseline]{
+                        recordWindowState("caption_doubleclick_maximized");if(!check("titlebar_doubleclick_maximizes",window->isMaximized()))return;
+                        captionDoubleClick();QTimer::singleShot(400,this,[this,captionBaseline]{
+                            recordWindowState("caption_doubleclick_restored");if(!check("titlebar_doubleclick_restores_original_geometry",!window->isMaximized()&&window->geometry()==captionBaseline))return;
+                            renderWindowStates();
+                        });
                     });
                 });
             });
         });
     }
     void renderWindowStates(){
-        window->showMaximized();foreground(window);recordWindowState("render_maximized");
-        QTimer::singleShot(900,this,[this]{
+        const auto renderBaseline=window->geometry();recordWindowState("render_before_maximize");window->showMaximized();foreground(window);recordWindowState("render_maximized");
+        QTimer::singleShot(900,this,[this,renderBaseline]{
             const auto screen=window->screen()->availableGeometry();
             if(!check("maximize_uses_screen_work_area",window->isMaximized()&&qAbs(window->width()-screen.width())<=2&&qAbs(window->height()-screen.height())<=2))return;
             if(!nativePresentation(window->currentTab()->findChild<ModelView*>(),"maximized_model_framebuffer","model_presents_on_native_window","ui-maximized-model"))return;
             window->showMinimized();
-            QTimer::singleShot(300,this,[this]{
+            QTimer::singleShot(300,this,[this,renderBaseline]{
                 if(!check("custom_window_minimize",window->isMinimized()))return;
                 window->showNormal();recordWindowState("normal_before_foreground");foreground(window);
-                QTimer::singleShot(900,this,[this]{
-                    recordWindowState("normal_after_foreground");if(!check("minimize_restore_returns_normal_geometry",!window->isMinimized()&&!window->isMaximized()&&window->geometry()==initialGeometry))return;
+                QTimer::singleShot(900,this,[this,renderBaseline]{
+                    recordWindowState("normal_after_foreground");if(!check("minimize_restore_returns_normal_geometry",!window->isMinimized()&&!window->isMaximized()&&window->geometry()==renderBaseline))return;
                     if(!nativePresentation(window->currentTab()->findChild<ModelView*>(),"restored_model_framebuffer","restored_model_presents_on_native_window","ui-restored-model"))return;
                     reparent();
                 });

@@ -63,6 +63,8 @@ inline ApplicationCapture captureApplicationWidget(QWidget *widget,bool exactNat
     };
     QRect physicalBounds;qreal ratio=1;
     if(const auto error=validateTarget(physicalBounds,ratio);!error.isEmpty())return {{},error};
+    // Give static dialogs a bitmap update as well; desktop acquisition rejects
+    // pointer-only notifications until a real image update has arrived.
     widget->window()->update();
     QString error;const auto pixels=captureDesktopRegion(physicalBounds,error);
     if(pixels.isNull())return {{},error};

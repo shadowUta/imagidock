@@ -3,6 +3,7 @@
 #include <QElapsedTimer>
 #include <QEventLoop>
 #include <QScopedValueRollback>
+#include <cstdio>
 
 #ifdef Q_OS_WIN
 #ifndef NOMINMAX
@@ -103,6 +104,7 @@ QImage captureDesktopRegion(const QRect &physicalBounds,QString &error)
     if(FAILED(result)){error=failure("D3D11CreateDevice on monitor adapter",result);return {};}
 
     ComPtr<IDXGIOutputDuplication> duplication;
+    LARGE_INTEGER captureStart{};QueryPerformanceCounter(&captureStart);
     result=selectedOutput->DuplicateOutput(device.Get(),duplication.GetAddressOf());
     if(FAILED(result)){error=failure("DuplicateOutput",result);return {};}
     DXGI_OUTDUPL_DESC duplicationDescription{};
@@ -120,12 +122,29 @@ QImage captureDesktopRegion(const QRect &physicalBounds,QString &error)
     // user input and socket notifier events stay queued until capture finishes.
     QElapsedTimer deadline;
     deadline.start();
+    unsigned pointerOnlyFrames=0;
     do {
         QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents|QEventLoop::ExcludeSocketNotifiers,5);
         result=duplication->AcquireNextFrame(10,&frameInfo,desktopResource.GetAddressOf());
+        // A newly created duplication can first signal only the mouse. That is
+        // not evidence of a desktop bitmap update, and its initial texture can
+        // still be blank. Keep this session alive until a real image arrives.
+        if(SUCCEEDED(result)&&frameInfo.LastPresentTime.QuadPart==0){
+            const auto release=duplication->ReleaseFrame();
+            desktopResource.Reset();
+            if(FAILED(release)){error=failure("ReleaseFrame pointer-only update",release);return {};}
+            ++pointerOnlyFrames;
+            result=DXGI_ERROR_WAIT_TIMEOUT;
+        }
     } while(result==DXGI_ERROR_WAIT_TIMEOUT&&deadline.elapsed()<500);
     if(FAILED(result)){error=failure("AcquireNextFrame (500 ms retry budget)",result);return {};}
     AcquiredFrame frame{duplication.Get()};
+    if(qEnvironmentVariableIsSet("IMAGIDOCK_CAPTURE_TRACE")){
+        std::fprintf(stderr,"desktop_capture present=%lld mouse=%lld start=%lld accumulated=%u metadata=%u protected=%d pointer_only_skipped=%u rect=%d,%d,%d,%d\n",
+            static_cast<long long>(frameInfo.LastPresentTime.QuadPart),static_cast<long long>(frameInfo.LastMouseUpdateTime.QuadPart),
+            static_cast<long long>(captureStart.QuadPart),frameInfo.AccumulatedFrames,frameInfo.TotalMetadataBufferSize,int(frameInfo.ProtectedContentMaskedOut),pointerOnlyFrames,physicalBounds.x(),physicalBounds.y(),physicalBounds.width(),physicalBounds.height());
+        std::fflush(stderr);
+    }
 
     ComPtr<ID3D11Texture2D> desktopTexture;
     result=desktopResource.As(&desktopTexture);
