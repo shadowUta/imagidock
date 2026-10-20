@@ -54,6 +54,17 @@ namespace {
 struct State : public QObject {
     QPointer<MainWindow> window,second,detachedWindow;RpcClient *rpc;QString report,screenshot,modelId,imageId,normalId,fixtureDirectory,fixtureRootId;QJsonObject originalFilterSession;QPointer<QWidget> dialogOrigin;QJsonArray assertions,captureWarnings,nativePresentations,windowStatesReport,layoutDiagnostics;QRect initialGeometry;QIcon folderIcon=uiIcon("folder");bool desktopValidation,done=false;int attempts=0;
     State(MainWindow *w,RpcClient *r,const QString &p,const QString &s,bool desktop):QObject(qApp),window(w),rpc(r),report(p),screenshot(s),desktopValidation(desktop){}
+    void recordFocusDiagnostic(const QString &name,QWidget *target=nullptr){
+        if(!target)target=window;
+        auto identity=[](QWidget *widget){return widget?QJsonObject{{"present",true},{"class",QString::fromLatin1(widget->metaObject()->className())},{"object_name",widget->objectName()},{"address",QString("0x%1").arg(qulonglong(reinterpret_cast<quintptr>(widget)),0,16)}}:QJsonObject{{"present",false}};};
+        auto details=[&identity](QWidget *widget){auto result=identity(widget);if(widget){result["visible"]=widget->isVisible();result["enabled"]=widget->isEnabled();result["has_focus"]=widget->hasFocus();result["active_window"]=widget->isActiveWindow();result["focus_policy"]=int(widget->focusPolicy());result["internal_win_id"]=QString("0x%1").arg(qulonglong(widget->internalWinId()),0,16);result["window"]=identity(widget->window());result["focus_widget"]=identity(widget->focusWidget());}return result;};
+        QJsonObject diagnostic{{"name",name},{"scope","in-process focus diagnostic; no screen capture"},{"qt_active_window",details(QApplication::activeWindow())},{"qt_active_modal_widget",details(QApplication::activeModalWidget())},{"global_focus",details(QApplication::focusWidget())},{"target",details(target)},{"target_window",details(target?target->window():nullptr)},{"test_window",details(window)},{"dialog_origin",details(dialogOrigin)},{"application_state",int(QGuiApplication::applicationState())}};
+#ifdef Q_OS_WIN
+        const auto nativeForeground=GetForegroundWindow();DWORD foregroundProcess=0;if(nativeForeground)GetWindowThreadProcessId(nativeForeground,&foregroundProcess);
+        diagnostic["windows_foreground_hwnd"]=QString("0x%1").arg(qulonglong(reinterpret_cast<quintptr>(nativeForeground)),0,16);diagnostic["windows_foreground_pid"]=qint64(foregroundProcess);diagnostic["test_process_pid"]=qint64(GetCurrentProcessId());
+#endif
+        layoutDiagnostics.append(diagnostic);
+    }
     ApplicationCapture captureWidget(QWidget *widget){
         if(desktopValidation)return captureApplicationWidget(widget);
         if(!widget)return {{},QStringLiteral("functional_capture_failed: target widget is missing")};
@@ -62,7 +73,7 @@ struct State : public QObject {
         if(raster.isNull())return {{},QStringLiteral("functional_capture_failed: Qt raster is empty")};
         return {raster,{}};
     }
-    bool check(const QString &name,bool passed){assertions.append(QJsonObject{{"name",name},{"passed",passed}});if(!passed)finish(false,name);return passed;}
+    bool check(const QString &name,bool passed){if(!passed)recordFocusDiagnostic(name+"_failure");assertions.append(QJsonObject{{"name",name},{"passed",passed}});if(!passed)finish(false,name);return passed;}
     void finish(bool ok,const QString &message={}){
         if(done)return;done=true;
         if(window&&!screenshot.isEmpty()){QDir().mkpath(QFileInfo(screenshot).absolutePath());const auto capture=captureWidget(window);if(capture.error.isEmpty())capture.image.save(screenshot);else captureWarnings.append(capture.error);}
@@ -244,7 +255,16 @@ call("library.info",{},[this](const QJsonObject &r){if(!check("dedicated_empty_l
         }
         QElapsedTimer captureTraceClock;captureTraceClock.start();
         const auto capture=captureApplicationWidget(model,true);
-        if(!capture.error.isEmpty()){finish(false,capture.error);return false;}
+        if(!capture.error.isEmpty()){
+            recordFocusDiagnostic(presentName+"_capture_failure",model);
+            QJsonArray nativeWidgets;
+            for(auto widget:qApp->allWidgets())if(widget->isVisible()&&widget->internalWinId()){
+                const auto origin=widget->mapToGlobal(QPoint());
+                nativeWidgets.append(QJsonObject{{"class",QString::fromLatin1(widget->metaObject()->className())},{"object_name",widget->objectName()},{"native_id",QString::number(qulonglong(widget->internalWinId()))},{"top_level_id",QString::number(qulonglong(widget->window()->internalWinId()))},{"global_bounds",QJsonArray{origin.x(),origin.y(),widget->width(),widget->height()}}});
+            }
+            layoutDiagnostics.append(QJsonObject{{"name",presentName+"_capture_native_widgets"},{"error",capture.error},{"widgets",nativeWidgets}});
+            finish(false,capture.error);return false;
+        }
         const auto screen=capture.image.toImage();const QString path=QFileInfo(report).absolutePath()+"/"+fileName;
         if(qEnvironmentVariableIntValue("IMAGIDOCK_CAPTURE_TRACE")==1){
             QPointer<ModelView> target=model;
@@ -477,6 +497,7 @@ call("library.info",{},[this](const QJsonObject &r){if(!check("dedicated_empty_l
         if(!check(name+"_content_below_custom_title",contentBelow))return false;
         const auto available=dialog->screen()->availableGeometry();
         if(!check(name+"_fits_screen_work_area",dialog->width()<=available.width()&&dialog->height()<=available.height()&&available.contains(dialog->frameGeometry())))return false;
+        recordFocusDiagnostic(name+"_before_content_focus_check",dialog);
         auto focus=QApplication::focusWidget();
         if(!check(name+"_focus_in_content",focus&&dialog->isAncestorOf(focus)&&focus->objectName()!="windowClose"))return false;
         auto close=dialog->findChild<QToolButton*>("windowClose");
@@ -657,7 +678,35 @@ call("library.info",{},[this](const QJsonObject &r){if(!check("dedicated_empty_l
             QTimer::singleShot(0,this,[this,guard,name,stage]{if(!check(name+"_escape_closes",!guard||!guard->isVisible()))return;applicationDialogs(stage+1);});
         });
     }
-    void dialog(){window->currentTab()->focusSearch();dialogOrigin=QApplication::focusWidget();window->showSettings();for(auto candidate:window->findChildren<GlassDialog*>())if(candidate->isVisible())foreground(candidate);QTimer::singleShot(400,this,[this]{GlassDialog *settings=nullptr;for(auto candidate:window->findChildren<GlassDialog*>())if(candidate->isVisible())settings=candidate;if(!check("glass_dialog_frameless",settings&&settings->windowFlags().testFlag(Qt::FramelessWindowHint)))return;if(!check("glass_dialog_content_below_titlebar",settings->layout()&&settings->layout()->contentsMargins().top()>=44))return;if(!check("dialog_focus_starts_in_content",QApplication::focusWidget()&&settings->isAncestorOf(QApplication::focusWidget())&&QApplication::focusWidget()->objectName()!="windowClose"))return;const auto capture=captureWidget(settings);if(capture.error.isEmpty())capture.image.save(QFileInfo(report).absolutePath()+"/ui-settings-dialog.png");else captureWarnings.append(capture.error);QKeyEvent escape(QEvent::KeyPress,Qt::Key_Escape,Qt::NoModifier);QApplication::sendEvent(settings,&escape);if(!check("esc_closes_glass_dialog",!settings->isVisible()))return;QTimer::singleShot(100,this,[this]{if(!check("dialog_returns_focus_to_invoker",dialogOrigin&&QApplication::focusWidget()==dialogOrigin))return;helperDialogs();});});}
+    void dialog(){
+        foreground(window);auto deadline=std::make_shared<QElapsedTimer>();deadline->start();waitForDialogInvoker(deadline);
+    }
+    void waitForDialogInvoker(const std::shared_ptr<QElapsedTimer> &deadline){
+        if(done)return;
+        if(!window->isActiveWindow()&&deadline->elapsed()<1000){QTimer::singleShot(qBound(1,1000-int(deadline->elapsed()),50),this,[this,deadline]{waitForDialogInvoker(deadline);});return;}
+        recordFocusDiagnostic("dialog_invoker_before_focus_search",window);
+        if(!check("dialog_invoker_main_window_is_active",window->isActiveWindow()))return;
+        auto search=window->currentTab()->findChild<QLineEdit*>("assetSearch");window->currentTab()->focusSearch();
+        recordFocusDiagnostic("dialog_invoker_after_focus_search",search);
+        if(!check("dialog_invoker_search_has_actual_focus",search&&search->isVisible()&&search->isEnabled()&&search->hasFocus()&&QApplication::focusWidget()==search))return;
+        dialogOrigin=search;window->showSettings();
+        QTimer::singleShot(400,this,[this]{
+            if(done)return;GlassDialog *settings=nullptr;for(auto candidate:window->findChildren<GlassDialog*>())if(candidate->isVisible())settings=candidate;
+            if(!check("glass_dialog_frameless",settings&&settings->windowFlags().testFlag(Qt::FramelessWindowHint)))return;
+            if(!check("glass_dialog_content_below_titlebar",settings->layout()&&settings->layout()->contentsMargins().top()>=44))return;
+            recordFocusDiagnostic("settings_dialog_before_content_focus_check",settings);
+            if(!check("dialog_focus_starts_in_content",QApplication::focusWidget()&&settings->isAncestorOf(QApplication::focusWidget())&&QApplication::focusWidget()->objectName()!="windowClose"))return;
+            const auto capture=captureWidget(settings);if(capture.error.isEmpty())capture.image.save(QFileInfo(report).absolutePath()+"/ui-settings-dialog.png");else captureWarnings.append(capture.error);
+            escapeDialog(settings);if(!check("esc_closes_glass_dialog",!settings->isVisible()))return;
+            recordFocusDiagnostic("dialog_focus_immediately_after_escape",dialogOrigin);auto deadline=std::make_shared<QElapsedTimer>();deadline->start();waitForDialogFocusReturn(deadline);
+        });
+    }
+    void waitForDialogFocusReturn(const std::shared_ptr<QElapsedTimer> &deadline){
+        if(done)return;const bool restored=dialogOrigin&&QApplication::focusWidget()==dialogOrigin;
+        if(!restored&&deadline->elapsed()<1000){QTimer::singleShot(qBound(1,1000-int(deadline->elapsed()),50),this,[this,deadline]{waitForDialogFocusReturn(deadline);});return;}
+        recordFocusDiagnostic(restored?"dialog_focus_return_observed":"dialog_focus_return_timeout",dialogOrigin);
+        if(!check("dialog_returns_focus_to_invoker",restored))return;helperDialogs();
+    }
     void navigation(){auto tab=window->currentTab();tab->openAsset(imageId);if(!check("association_history_push",tab->session()["history"].toArray()==QJsonArray{modelId,imageId}))return;tab->back();if(!check("association_back_returns_model",tab->session()["history"].toArray()==QJsonArray{modelId}))return;tab->home();if(!check("home_clears_history",tab->session()["history"].toArray().isEmpty()&&!tab->session()["detail"].toBool()))return;QJsonObject state{{"filter",QJsonObject{{"query","UI"},{"types",QJsonArray{"image","video"}},{"tags",QJsonArray{"ui-test","color"}},{"status","favorite"},{"sort","name"}}},{"history",QJsonArray{modelId,imageId}},{"detail",true},{"asset_id",imageId}};auto duplicate=window->addTab(state);if(!check("duplicate_tab_keeps_independent_filters",duplicate->session()["filter"]==state["filter"]&&tab->session()["history"].toArray().isEmpty()))return;second=new MainWindow(rpc,new ThumbnailStore(rpc,this));second->show();second->currentTab()->openAsset(imageId);call("asset.get",{{"asset_id",imageId}},[this](const QJsonObject &asset){call("asset.update",{{"asset_id",imageId},{"revision",asset["revision"]},{"values",QJsonObject{{"name","UI synchronized.png"}}}},[this](const QJsonObject &){rpc->refresh();QTimer::singleShot(2300,this,[this]{if(!window||!second){finish(false,"window closed during test");return;}if(!check("two_windows_share_asset_identity",window->currentTab()->currentAssetId()==imageId&&second->currentTab()->currentAssetId()==imageId))return;auto hasName=[](MainWindow *w){for(auto edit:w->findChildren<QLineEdit*>())if(edit->text()=="UI synchronized.png")return true;return false;};if(!check("cross_window_update_visible",hasName(window)&&hasName(second)))return;window->currentTab()->home();window->currentTab()->restoreSession({{"filter",QJsonObject{}},{"history",QJsonArray{}},{"detail",false}});attempts=0;waitForThumbnail();});});});}
 };
 }

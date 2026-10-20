@@ -16,14 +16,23 @@ struct ApplicationCapture {
 // Only used by explicit self-test/smoke commands, on their own transient window.
 inline void foregroundApplicationTestWindow(QWidget *widget) {
     if(!widget)return;
+    auto top=widget->window();
 #ifdef Q_OS_WIN
     // A one-shot idle reset for explicit visual tests. It does not change power
     // policy, hold a persistent request, or unlock the desktop.
     SetThreadExecutionState(ES_DISPLAY_REQUIRED|ES_SYSTEM_REQUIRED);
-    SetWindowPos(reinterpret_cast<HWND>(widget->winId()),HWND_TOPMOST,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE);
+    // Keep only this helper's current transient window topmost. Otherwise the
+    // preceding test window can remain above a newly detached one after queued
+    // activation events. Never change another process or a normal app window.
+    static QPointer<QWidget> previousTop;
+    constexpr UINT positionFlags=SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE|SWP_NOOWNERZORDER;
+    if(previousTop&&previousTop!=top&&previousTop->internalWinId())
+        SetWindowPos(reinterpret_cast<HWND>(previousTop->internalWinId()),HWND_NOTOPMOST,0,0,0,0,positionFlags);
+    SetWindowPos(reinterpret_cast<HWND>(top->winId()),HWND_TOPMOST,0,0,0,0,positionFlags);
+    previousTop=top;
 #endif
-    widget->raise();
-    widget->activateWindow();
+    top->raise();
+    top->activateWindow();
 }
 
 // Test-only capture: never save pixels belonging to a lock screen or another app.
