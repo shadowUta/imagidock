@@ -1,4 +1,5 @@
 #include "AssetGrid.h"
+#include "GlassMaterial.h"
 #include "Theme.h"
 #include "UiMetrics.h"
 #include <QApplication>
@@ -65,9 +66,7 @@ void AssetDelegate::paint(QPainter *p,const QStyleOptionViewItem &o,const QModel
     const bool selected=o.state&QStyle::State_Selected,hover=o.state&QStyle::State_MouseOver,focused=o.state&QStyle::State_HasFocus;
     const auto theme=themeColors();const QRectF card=QRectF(o.rect).adjusted(4,4,-4,-4);
     if(card.width()<=0||card.height()<=0){p->restore();return;}
-    QColor surface=selected?theme.accent:theme.card;
-    surface.setAlpha(selected?(theme.light?40:36):(theme.light?(hover?126:104):(hover?23:14)));
-    p->setPen(Qt::NoPen);p->setBrush(surface);p->drawRoundedRect(card,UiMetrics::CardRadius,UiMetrics::CardRadius);
+    paintGlassSurface(*p,card,UiMetrics::CardRadius,GlassLayer::Card,selected||hover||focused,false,false,false);
 
     // The preview touches the card edges; only its source aspect ratio can leave space.
     const QRectF image(card.topLeft(),QSizeF(card.width(),card.width()));
@@ -111,6 +110,8 @@ void AssetDelegate::paint(QPainter *p,const QStyleOptionViewItem &o,const QModel
         p->drawLine(QPointF(card.left()+5,metadataTop+15),
                     QPointF(card.left()+5,metadataTop+(focused?34:29)));
     }
+    // Paint the fine glass edge only once, after the image and metadata.
+    paintGlassOutline(*p,card,UiMetrics::CardRadius,GlassLayer::Card,selected||hover||focused);
     p->restore();
 }
 AssetGrid::AssetGrid(QWidget *p):QListView(p),m_delegate(new AssetDelegate(this)){setObjectName("assetGrid");setAccessibleName(tr("素材卡片列表"));setAccessibleDescription(tr("方向键选择素材，Enter 打开详情；Ctrl 或 Shift 多选。"));setViewMode(IconMode);setResizeMode(Adjust);setMovement(Static);setWrapping(true);setUniformItemSizes(true);setLayoutMode(Batched);setBatchSize(80);setSelectionMode(ExtendedSelection);setVerticalScrollMode(ScrollPerPixel);setVerticalScrollBar(new GridScrollBar(this));setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOn);setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);setMouseTracking(true);setSpacing(0);setAcceptDrops(true);setDragEnabled(false);setItemDelegate(m_delegate);setCardSize(176);}

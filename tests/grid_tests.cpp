@@ -31,13 +31,13 @@ QPixmap preview(const QString &shape)
     const QSize size = shape == "wide" ? QSize(640, 320) :
                        shape == "tall" ? QSize(320, 640) : QSize(320, 320);
     QImage image(size, QImage::Format_ARGB32_Premultiplied);
-    image.fill(shape == "alpha" ? Qt::transparent : previewInk);
+    image.fill(shape == "alpha" || shape == "clear" ? Qt::transparent : previewInk);
     if (shape == "alpha") {
         QPainter painter(&image);
         painter.setPen(Qt::NoPen);
         painter.setBrush(previewInk);
         painter.drawEllipse(QRect(110, 110, 100, 100));
-    } else if (shape != "square") {
+    } else if (shape != "square" && shape != "clear") {
         // Distinct corner marks expose clipping of either end of a wide or tall image.
         QPainter painter(&image);
         const int mark = 64;
@@ -317,7 +317,9 @@ private slots:
         QVERIFY(area.isValid());
         QVERIFY(area.left() <= 5 && area.top() <= 5);
         QVERIFY(area.right() >= square.width() - 6);
-        QCOMPARE(area.width(), area.height());
+        // The 1 px glass outline sits over the top and side pixels of the source.
+        // Its visible-color bounds can therefore differ by one pixel vertically.
+        QVERIFY(qAbs(area.width() - area.height()) <= 1);
         QVERIFY2(!near(square.pixelColor(area.topLeft()), previewInk), "The preview lost its rounded top corner.");
         QVERIFY(square.pixelColor(area.topLeft()).alpha() < 200);
         QVERIFY(near(square.pixelColor(QPoint(area.left(), area.center().y())), previewInk));
@@ -340,15 +342,40 @@ private slots:
         } else if (shape == "alpha") {
             QVERIFY(area.contains(bounds));
             QVERIFY(bounds.width() < area.width() / 2);
+            // Empty source pixels must expose the identical material underneath,
+            // including its static grain, rather than an inserted checkerboard.
+            const auto clearPreview = paintedCard("clear");
             const QColor background = image.pixelColor(30, 40);
             QVERIFY(background.alpha() < 200);
             for (int y : {40, 48, 56, 64})
                 for (int x : {30, 38, 46, 54})
-                    QCOMPARE(image.pixelColor(x, y), background);
+                    QCOMPARE(image.pixelColor(x, y), clearPreview.pixelColor(x, y));
             QVERIFY2(near(image.pixelColor(area.center()), previewInk), "The transparent preview's visible content disappeared.");
         } else {
             QCOMPARE(bounds, area);
         }
+    }
+
+    void glassEdgeRemainsAboveOpaquePreview_data()
+    {
+        QTest::addColumn<QString>("theme");
+        for (const char *theme : {"ivory", "graphite", "ocean", "mint"})
+            QTest::newRow(theme) << QString::fromLatin1(theme);
+    }
+
+    void glassEdgeRemainsAboveOpaquePreview()
+    {
+        QFETCH(QString, theme);
+        applyUiTheme(theme);
+        const auto image = paintedCard("square");
+        const QPoint leftEdge(4, 128), topEdge(128, 4);
+        // A light edge must remain visible even above an opaque source image.
+        // Checking source pixels immediately inside it also bounds its thickness.
+        QVERIFY(image.pixelColor(leftEdge).green() > previewInk.green() + 10);
+        QVERIFY(image.pixelColor(topEdge).green() > previewInk.green() + 10);
+        QVERIFY(near(image.pixelColor(6, 128), previewInk));
+        QVERIFY(near(image.pixelColor(128, 6), previewInk));
+        QCOMPARE(image.pixelColor(2, 128).alpha(), 0);
     }
 
     void fourThemeContactSheet()

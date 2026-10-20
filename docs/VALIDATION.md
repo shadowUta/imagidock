@@ -77,6 +77,18 @@ Release 应用构建成功，回执为 `logs/linear-v6-final-build.log`。新网
 
 本轮使用合成素材离屏检查，不触用户库，不作为实际桌面呈现或完整便携回归证明；v5 的 21 项和 v3 的 517 项结果保留各自历史范围。按用户要求，完成后只打开一次正常 v6 的默认库网格供人工验收，不重复启动可见测试窗口，也不关闭其他已打开的版本。
 
+### 2026-10-20 Linear v7 上层毛玻璃材质
+
+本地版本为 `0.1.0-rc.1+linear.20261020.7`，入口为 `ImagiDock-linear-v7.exe`。按用户最新说明，本轮为上层面板、卡片、按钮和标签添加 1 px 柔和浅色圆角高光边缘，并统一应用内磨砂材质，采用半透明主题层、柔和高光扩散和自绘表面的固定微粒；标准控件使用同色系渐变。卡片与轮播在图像绘制后只描一次边缘。原四主题色值、晕染背景、列表和目录树的局部焦点提示、文字与素材清晰度、透明预览无棋盘以及 v6 的响应式网格保持。
+
+该材质不宣称 Windows 桌面实时模糊，不采用逐控件抓图、GPU 读回或整个控件模糊。最终浅色边缘版 Release 构建成功，回执为 `logs/linear-v7-edge-build.log`。QtTest 通过 `QT_QPA_PLATFORM=offscreen` 分别设置 `QT_SCALE_FACTOR=1` 和 `1.5`，右栏与全局控件、素材网格两组每档分别获得 **21 passed、0 failed、0 skipped**，含初始化／清理。右栏两档耗时 347／386 ms，网格两档耗时 21.173／21.276 秒；回执为 `logs/glass-v7-edge-inspector-100.txt`／XML、`logs/glass-v7-edge-inspector-150.txt`／XML、`logs/glass-v7-edge-grid-100.txt`／XML 和 `logs/glass-v7-edge-grid-150.txt`／XML。
+
+新增四主题 `glassEdgeRemainsAboveOpaquePreview` 像素检查确认：不透明素材图上的顶边和左边被浅色高光提亮，向内 2 px 保持原素材 RGB，向外 2 px 仍透明，验证细边可见且不变成宽框。透明图与全透明图在对应坐标逐点比较，保留真实材质微粒；色域包络允许 1 px 描边引入的 1 px 宽高差，原有完整角标、比例、布局及交互检查继续保持。四主题卡片联系表、冰青／石墨黑右栏与全局控件图已目检；两档真实网格视口的冰青离屏图另行留存。图像位于 `logs/glass-v7-edge-grid-100/`、`logs/glass-v7-edge-grid-150/`、`logs/glass-v7-edge-inspector-100/` 和 `logs/glass-v7-edge-inspector-150/`。
+
+补边后的短预览检查曾因旧版色域宽高相等断言捕获 4 项失败，回执 `logs/glass-v7-edge-preview-check.txt` 保留。最终针对 1 px 边缘调整包络条件，并加入上述独立像素检查；失败结果不并入通过记录。澄清前无描边草稿的两档 21＋17 项也单独保留，不计作最终边缘版通过。离屏环境的字体目录和 `propagateSizeHints` 提示保留，无运行时样式表解析警告；v6 的两档 17 项、v5 的 21 项和 v3 的 517 项结果均保持各自版本范围。
+
+按用户要求，本轮完成后只打开一次正常新版供人工验收，不重复启动可见测试窗口，不关闭其他已打开的版本，也不修改默认库内容。离屏组件检查不作为实际桌面呈现或完整便携回归证明；独立干净 Windows 系统验收仍待完成。
+
 ## 构建与运行环境
 
 本机 Windows x64 Release 已编译桌面程序、库服务、Filament 渲染助手、SAI1 助手和 Qt 媒体助手，支持中文工作区路径。主要组件为 Qt 6.8.3、Filament 1.78.0、Assimp 5.4.3、SQLite 3.50.4、Zstandard 1.5.7；3D 验证使用 RTX 4070 Ti / OpenGL。

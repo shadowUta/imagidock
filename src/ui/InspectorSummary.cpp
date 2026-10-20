@@ -1,5 +1,6 @@
 #include "InspectorSummary.h"
 
+#include "GlassMaterial.h"
 #include "Theme.h"
 #include "UiIcons.h"
 #include "UiMetrics.h"
@@ -228,11 +229,10 @@ protected:
             auto color = property("selected").toBool() ? colors.text : colors.muted;
             if (!property("selected").toBool())
                 color.setAlphaF(.55);
-            QColor backing = colors.top;
-            backing.setAlpha(125);
+            const QRectF backing(width() / 2. - 5, height() / 2. - 5, 10, 10);
+            paintGlassSurface(painter, backing, 5, GlassLayer::Control,
+                              underMouse() || hasFocus() || isChecked(), isDown(), true);
             painter.setPen(Qt::NoPen);
-            painter.setBrush(backing);
-            painter.drawEllipse(QPointF(width() / 2., height() / 2.), 5, 5);
             painter.setBrush(color);
             painter.drawEllipse(QPointF(width() / 2., height() / 2.),
                                 property("selected").toBool() ? 3.5 : 2.5,
@@ -245,28 +245,23 @@ protected:
             return;
         }
         const bool circular = m_kind == ButtonKind::AddTag;
-        const bool overlay = m_kind == ButtonKind::Previous || m_kind == ButtonKind::Next;
-        QColor fill = colors.card;
-        if (overlay) {
-            fill = colors.top;
-            fill.setAlpha(205);
-        } else if (!underMouse() && !isDown() && !isChecked() && !hasFocus()) {
-            fill.setAlpha(0);
-        }
-        if (isDown()) {
-            fill = overlay ? colors.top : colors.accent;
-            fill.setAlpha(overlay ? 245 : (colors.light ? 55 : 45));
-        } else if (underMouse() || hasFocus()) {
-            fill = overlay ? colors.top : colors.accent;
-            fill.setAlpha(overlay ? 235 : (colors.light ? 30 : 24));
-        }
-        painter.setPen(circular ? QPen(hasFocus() ? colors.accent : colors.edge, 1) : QPen(Qt::NoPen));
-        painter.setBrush(fill);
         const auto bounds = QRectF(rect()).adjusted(.5, .5, -.5, -.5);
-        if (circular)
-            painter.drawEllipse(bounds);
-        else
+        if (m_kind == ButtonKind::Previous || m_kind == ButtonKind::Next) {
+            // These controls sit over arbitrary artwork; retain a local tint
+            // beneath the shared glass so their arrows always stay readable.
+            auto backing = colors.top;
+            backing.setAlpha(isDown() ? 230 : underMouse() || hasFocus() ? 215 : 195);
+            painter.setPen(Qt::NoPen);
+            painter.setBrush(backing);
             painter.drawRoundedRect(bounds, UiMetrics::ControlRadius, UiMetrics::ControlRadius);
+        }
+        paintGlassSurface(painter, bounds, UiMetrics::ControlRadius, GlassLayer::Control,
+                          underMouse() || isChecked() || hasFocus(), isDown(), circular);
+        if (circular && hasFocus()) {
+            painter.setPen(QPen(colors.accent, 1));
+            painter.setBrush(Qt::NoBrush);
+            painter.drawEllipse(bounds);
+        }
         if (hasFocus() && !circular) {
             painter.setPen(Qt::NoPen);
             painter.setBrush(colors.accent);
@@ -339,15 +334,9 @@ protected:
         const auto colors = themeColors();
         QPainter painter(this);
         painter.setRenderHint(QPainter::Antialiasing);
-        QColor background = colors.card;
-        background.setAlpha(colors.light ? (underMouse() || hasFocus() ? 165 : 95)
-                                        : (underMouse() || hasFocus() ? 30 : 14));
-        auto edge = colors.edge;
-        edge.setAlpha(colors.light ? 110 : 28);
-        painter.setPen(QPen(edge, 1));
-        painter.setBrush(background);
-        painter.drawRoundedRect(QRectF(rect()).adjusted(.5, .5, -.5, -.5),
-                                UiMetrics::ControlRadius, UiMetrics::ControlRadius);
+        const auto bounds = QRectF(rect()).adjusted(.5, .5, -.5, -.5);
+        paintGlassSurface(painter, bounds, UiMetrics::ControlRadius, GlassLayer::Control,
+                          underMouse() || hasFocus() || isChecked(), isDown());
         painter.setPen(colors.text);
         QTextLayout layout(text(), textFont(this, 11));
         layoutLines(layout, std::max(1, width() - 16));
@@ -507,6 +496,10 @@ protected:
         clip.lineTo(width(), height());
         clip.closeSubpath();
         painter.setClipPath(clip);
+        // The material sits behind the preview, so transparent pixels keep
+        // showing the themed glass without washing out source artwork.
+        paintGlassSurface(painter, QRectF(rect()), UiMetrics::PanelRadius, GlassLayer::Panel,
+                          false, false, false, false);
         if (!image.isNull()) {
             painter.setRenderHint(QPainter::SmoothPixmapTransform);
             painter.drawPixmap(imageRect(), image, QRectF(image.rect()));
@@ -524,6 +517,7 @@ protected:
             painter.drawLine(QPointF(width() / 2. - 9, height() - 3.),
                              QPointF(width() / 2. + 9, height() - 3.));
         }
+        paintGlassOutline(painter, QRectF(rect()), UiMetrics::PanelRadius, GlassLayer::Panel);
     }
     void keyPressEvent(QKeyEvent *event) override
     {

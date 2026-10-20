@@ -1,5 +1,6 @@
 #include "GlassDialog.h"
 #include "Theme.h"
+#include "GlassMaterial.h"
 #include "UiMetrics.h"
 #include <QLayout>
 #include <QApplication>
@@ -35,8 +36,8 @@ void paintGlassDialog(QPainter &painter,QWidget *dialog,QPixmap &background,QStr
         QRadialGradient glow(QPointF(dialog->width()*.15,dialog->height()*.1),dialog->width());
         auto color=theme.glow;color.setAlpha(theme.light?145:38);glow.setColorAt(0,color);
         color.setAlpha(0);glow.setColorAt(1,color);surface.fillRect(dialog->rect(),glow);
-        surface.setPen(QPen(theme.edge,1));surface.setBrush(Qt::NoBrush);
-        surface.drawRoundedRect(QRectF(dialog->rect()).adjusted(.5,.5,-.5,-.5),UiMetrics::DialogRadius,UiMetrics::DialogRadius);
+        paintGlassSurface(surface,QRectF(dialog->rect()),UiMetrics::DialogRadius,GlassLayer::Panel,false,false,false,false);
+        paintGlassOutline(surface,QRectF(dialog->rect()),UiMetrics::DialogRadius,GlassLayer::Panel);
     }
     painter.drawPixmap(0,0,background);
     auto font=painter.font();font.setBold(true);font.setPixelSize(13);painter.setFont(font);
