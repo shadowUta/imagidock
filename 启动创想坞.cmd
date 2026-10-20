@@ -1,5 +1,7 @@
 @echo off
-if exist "%~dp0dist\ImagiDock-0.1.0-rc.1-win-x64\ImagiDock-linear-v4.exe" (
+if exist "%~dp0dist\ImagiDock-0.1.0-rc.1-win-x64\ImagiDock-linear-v5.exe" (
+    start "" "%~dp0dist\ImagiDock-0.1.0-rc.1-win-x64\ImagiDock-linear-v5.exe"
+) else if exist "%~dp0dist\ImagiDock-0.1.0-rc.1-win-x64\ImagiDock-linear-v4.exe" (
     start "" "%~dp0dist\ImagiDock-0.1.0-rc.1-win-x64\ImagiDock-linear-v4.exe"
 ) else if exist "%~dp0dist\ImagiDock-0.1.0-rc.1-win-x64\ImagiDock-linear-v3.exe" (
     start "" "%~dp0dist\ImagiDock-0.1.0-rc.1-win-x64\ImagiDock-linear-v3.exe"

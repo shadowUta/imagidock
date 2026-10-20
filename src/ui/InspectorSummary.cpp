@@ -109,11 +109,9 @@ protected:
             }
         }
         if (hasFocus()) {
-            QColor edge = themeColors().accent;
-            edge.setAlpha(150);
-            painter.setPen(QPen(edge, 1));
-            painter.setBrush(Qt::NoBrush);
-            painter.drawRoundedRect(QRectF(rect()).adjusted(.5, .5, -.5, -.5), 4, 4);
+            painter.setPen(QPen(themeColors().accent, 2, Qt::SolidLine, Qt::RoundCap));
+            painter.drawLine(QPointF(1, height() - 1.5),
+                             QPointF(std::min(17, width() - 1), height() - 1.5));
         }
     }
     void mouseDoubleClickEvent(QMouseEvent *event) override
@@ -252,19 +250,28 @@ protected:
         if (overlay) {
             fill = colors.top;
             fill.setAlpha(205);
-        } else if (!underMouse() && !isDown() && !isChecked()) {
+        } else if (!underMouse() && !isDown() && !isChecked() && !hasFocus()) {
             fill.setAlpha(0);
         }
-        QColor edge = colors.edge;
-        if (m_kind == ButtonKind::Favorite && !hasFocus())
-            edge.setAlpha(0);
-        painter.setPen(QPen(hasFocus() ? colors.accent : edge, 1));
+        if (isDown()) {
+            fill = overlay ? colors.top : colors.accent;
+            fill.setAlpha(overlay ? 245 : (colors.light ? 55 : 45));
+        } else if (underMouse() || hasFocus()) {
+            fill = overlay ? colors.top : colors.accent;
+            fill.setAlpha(overlay ? 235 : (colors.light ? 30 : 24));
+        }
+        painter.setPen(circular ? QPen(hasFocus() ? colors.accent : colors.edge, 1) : QPen(Qt::NoPen));
         painter.setBrush(fill);
         const auto bounds = QRectF(rect()).adjusted(.5, .5, -.5, -.5);
         if (circular)
             painter.drawEllipse(bounds);
         else
             painter.drawRoundedRect(bounds, UiMetrics::ControlRadius, UiMetrics::ControlRadius);
+        if (hasFocus() && !circular) {
+            painter.setPen(Qt::NoPen);
+            painter.setBrush(colors.accent);
+            painter.drawEllipse(QPointF(width() / 2., height() - 3.), 1.5, 1.5);
+        }
         const auto iconBounds = QRect(6, 6, 16, 16);
         if (m_kind == ButtonKind::Favorite) {
             painter.translate(6, 6);
@@ -333,10 +340,11 @@ protected:
         QPainter painter(this);
         painter.setRenderHint(QPainter::Antialiasing);
         QColor background = colors.card;
-        background.setAlpha(colors.light ? (underMouse() ? 165 : 95) : (underMouse() ? 30 : 14));
+        background.setAlpha(colors.light ? (underMouse() || hasFocus() ? 165 : 95)
+                                        : (underMouse() || hasFocus() ? 30 : 14));
         auto edge = colors.edge;
-        edge.setAlpha(colors.light ? 165 : 35);
-        painter.setPen(QPen(hasFocus() ? colors.accent : edge, 1));
+        edge.setAlpha(colors.light ? 110 : 28);
+        painter.setPen(QPen(edge, 1));
         painter.setBrush(background);
         painter.drawRoundedRect(QRectF(rect()).adjusted(.5, .5, -.5, -.5),
                                 UiMetrics::ControlRadius, UiMetrics::ControlRadius);
@@ -344,6 +352,11 @@ protected:
         QTextLayout layout(text(), textFont(this, 11));
         layoutLines(layout, std::max(1, width() - 16));
         layout.draw(&painter, QPointF(8, 6));
+        if (hasFocus()) {
+            painter.setPen(QPen(colors.accent, 2, Qt::SolidLine, Qt::RoundCap));
+            painter.drawLine(QPointF(8, height() - 2.5),
+                             QPointF(std::min(22, width() - 8), height() - 2.5));
+        }
     }
     void contextMenuEvent(QContextMenuEvent *event) override
     {
@@ -506,10 +519,10 @@ protected:
         }
         if (hasFocus()) {
             auto color = themeColors().accent;
-            color.setAlpha(130);
-            painter.setPen(QPen(color, 1));
-            painter.setBrush(Qt::NoBrush);
-            painter.drawRect(QRectF(rect()).adjusted(.5, .5, -.5, -.5));
+            color.setAlpha(190);
+            painter.setPen(QPen(color, 2, Qt::SolidLine, Qt::RoundCap));
+            painter.drawLine(QPointF(width() / 2. - 9, height() - 3.),
+                             QPointF(width() / 2. + 9, height() - 3.));
         }
     }
     void keyPressEvent(QKeyEvent *event) override

@@ -1,18 +1,27 @@
 #include "ui/InspectorSummary.h"
 #include "ui/Theme.h"
+#include "ui/UiStyle.h"
 
 #include <QAbstractButton>
 #include <QApplication>
 #include <QDir>
 #include <QFileInfo>
 #include <QFontDatabase>
+#include <QGridLayout>
 #include <QImage>
 #include <QJsonArray>
 #include <QLabel>
 #include <QLayout>
+#include <QLineEdit>
+#include <QListWidget>
 #include <QPainter>
 #include <QRegularExpression>
 #include <QSignalSpy>
+#include <QSlider>
+#include <QPushButton>
+#include <QStyleOptionFocusRect>
+#include <QTableWidget>
+#include <QTreeWidget>
 #include <QtTest>
 
 namespace {
@@ -75,6 +84,112 @@ bool containsColor(const QImage &image, const QColor &expected)
     return false;
 }
 
+// Detect a long accent-colored perimeter line, rather than rejecting a focused
+// control's fill, rounded silhouette, text, or short keyboard-focus marker.
+int longestAccentPerimeterLine(const QImage &image, const QColor &accent)
+{
+    if (image.width() < 20 || image.height() < 12) return 0;
+    const auto nearAccent = [&accent](const QColor &color) {
+        return color.alpha() > 180 && qAbs(color.red() - accent.red()) <= 18 &&
+               qAbs(color.green() - accent.green()) <= 18 && qAbs(color.blue() - accent.blue()) <= 18;
+    };
+    const auto differs = [](const QColor &a, const QColor &b) {
+        return qAbs(a.red() - b.red()) + qAbs(a.green() - b.green()) + qAbs(a.blue() - b.blue()) > 24;
+    };
+    int longest = 0;
+    for (int inset = 0; inset < 3; ++inset) {
+        for (bool right : {false, true}) {
+            int run = 0;
+            const int x = right ? image.width() - 1 - inset : inset;
+            const int insideX = right ? image.width() - 6 : 5;
+            for (int y = 6; y < image.height() - 6; ++y) {
+                const auto pixel = image.pixelColor(x, y);
+                run = nearAccent(pixel) && differs(pixel, image.pixelColor(insideX, y)) ? run + 1 : 0;
+                longest = qMax(longest, run);
+            }
+        }
+        for (bool bottom : {false, true}) {
+            int run = 0;
+            const int y = bottom ? image.height() - 1 - inset : inset;
+            const int insideY = bottom ? image.height() - 6 : 5;
+            for (int x = 8; x < image.width() - 8; ++x) {
+                const auto pixel = image.pixelColor(x, y);
+                run = nearAccent(pixel) && differs(pixel, image.pixelColor(x, insideY)) ? run + 1 : 0;
+                longest = qMax(longest, run);
+            }
+        }
+    }
+    return longest;
+}
+
+int longestChangedBranchRun(const QImage &unselected, const QImage &selected, const QRect &branch)
+{
+    int longest = 0, run = 0;
+    for (int y = branch.top(); y <= branch.bottom(); ++y) {
+        int changed = 0;
+        for (int x = branch.left(); x <= branch.right(); ++x) {
+            const auto a = unselected.pixelColor(x, y), b = selected.pixelColor(x, y);
+            if (qAbs(a.red() - b.red()) + qAbs(a.green() - b.green()) + qAbs(a.blue() - b.blue()) > 24)
+                ++changed;
+        }
+        run = changed * 10 >= branch.width() * 7 ? run + 1 : 0;
+        longest = qMax(longest, run);
+    }
+    return longest;
+}
+
+int contrastingBranchPixels(const QImage &image, const QRect &branch)
+{
+    const auto background = image.pixelColor(branch.topLeft());
+    int count = 0;
+    for (int y = branch.top(); y <= branch.bottom(); ++y)
+        for (int x = branch.left(); x <= branch.right(); ++x) {
+            const auto pixel = image.pixelColor(x, y);
+            if (qAbs(pixel.red() - background.red()) + qAbs(pixel.green() - background.green()) +
+                qAbs(pixel.blue() - background.blue()) > 32) ++count;
+        }
+    return count;
+}
+
+int changedBranchPixels(const QImage &before, const QImage &after, const QRect &branch)
+{
+    int count = 0;
+    for (int y = branch.top(); y <= branch.bottom(); ++y)
+        for (int x = branch.left(); x <= branch.right(); ++x) {
+            const auto a = before.pixelColor(x, y), b = after.pixelColor(x, y);
+            if (qAbs(a.red() - b.red()) + qAbs(a.green() - b.green()) + qAbs(a.blue() - b.blue()) > 24)
+                ++count;
+        }
+    return count;
+}
+
+int longestChangedPerimeterLine(const QImage &before, const QImage &after)
+{
+    if (before.size() != after.size() || after.width() < 20 || after.height() < 20) return 0;
+    const auto changed = [&before, &after](int x, int y) {
+        const auto a = before.pixelColor(x, y), b = after.pixelColor(x, y);
+        return qAbs(a.red() - b.red()) + qAbs(a.green() - b.green()) + qAbs(a.blue() - b.blue()) > 15;
+    };
+    int longest = 0;
+    for (int inset = 0; inset < 3; ++inset) {
+        for (int x : {inset, after.width() - 1 - inset}) {
+            int run = 0;
+            for (int y = 8; y < after.height() - 8; ++y) {
+                run = changed(x, y) ? run + 1 : 0;
+                longest = qMax(longest, run);
+            }
+        }
+        for (int y : {inset, after.height() - 1 - inset}) {
+            int run = 0;
+            for (int x = 8; x < after.width() - 8; ++x) {
+                run = changed(x, y) ? run + 1 : 0;
+                longest = qMax(longest, run);
+            }
+        }
+    }
+    return longest;
+}
+
 // A plain themed host supplies the background that transparent previews must expose.
 // These artifacts are QWidget raster renders on the offscreen platform, not desktop captures.
 class ThemeHost final : public QWidget {
@@ -109,6 +224,8 @@ private slots:
     {
         QApplication::setApplicationName(QStringLiteral("ImagiDock Inspector Tests"));
         QApplication::setOrganizationName(QStringLiteral("ImagiDock"));
+        QApplication::setStyle(createUiStyle());
+        applyUiTheme(QStringLiteral("graphite"));
         QVERIFY2(QGuiApplication::platformName() == QStringLiteral("offscreen"),
                  "Run this focused widget test with QT_QPA_PLATFORM=offscreen; it does not open the desktop application.");
         const QString fontPath = qEnvironmentVariable("IMAGIDOCK_INSPECTOR_FONT");
@@ -367,7 +484,7 @@ private slots:
     void fourThemesOffscreen()
     {
         QFETCH(QString, theme);
-        qApp->setProperty("imagidockTheme", theme);
+        applyUiTheme(theme);
         ThemeHost host;
         host.resize(360, 720);
         InspectorSummary summary(&host);
@@ -400,6 +517,177 @@ private slots:
             QVERIFY2(target.startsWith(project + "/", Qt::CaseInsensitive), "Offscreen artifacts must stay inside the project directory.");
             QVERIFY(QDir().mkpath(target));
             QVERIFY(rendered.save(target + QStringLiteral("/inspector-%1-offscreen.png").arg(theme)));
+        }
+    }
+
+    void globalControlsWithoutRectangleBorders_data()
+    {
+        fourThemesOffscreen_data();
+    }
+
+    void globalControlsWithoutRectangleBorders()
+    {
+        QFETCH(QString, theme);
+        applyUiTheme(theme);
+        ThemeHost host;
+        host.resize(720, 760);
+        auto layout = new QGridLayout(&host);
+        auto action = new QPushButton(QString::fromUtf8("创建备份"));
+        auto input = new QLineEdit(QString::fromUtf8("搜索素材"));
+        auto types = new QListWidget;
+        types->setObjectName(QStringLiteral("typeNavigation"));
+        types->addItems({QString::fromUtf8("图片"), QString::fromUtf8("模型"), QString::fromUtf8("视频"), QString::fromUtf8("音频"), QString::fromUtf8("创作源文件")});
+        types->setFixedHeight(180);
+        auto tree = new QTreeWidget;
+        tree->setHeaderHidden(true);
+        tree->setFixedHeight(180);
+        auto directory = new QTreeWidgetItem(tree, {QString::fromUtf8("工作区示范")});
+        new QTreeWidgetItem(directory, {QString::fromUtf8("01 三维模型")});
+        directory->setExpanded(true);
+        auto table = new QTableWidget(2, 3);
+        table->setHorizontalHeaderLabels({QString::fromUtf8("任务"), QString::fromUtf8("状态"), QString::fromUtf8("信息")});
+        table->setItem(0, 0, new QTableWidgetItem(QString::fromUtf8("预览")));
+        table->setItem(0, 1, new QTableWidgetItem(QString::fromUtf8("完成")));
+        table->setFixedHeight(150);
+        auto slider = new QSlider(Qt::Horizontal);
+        slider->setValue(45);
+        slider->setMinimumHeight(32);
+        layout->addWidget(action, 0, 0);
+        layout->addWidget(input, 0, 1);
+        layout->addWidget(types, 1, 0);
+        layout->addWidget(tree, 1, 1);
+        layout->addWidget(table, 2, 0, 1, 2);
+        layout->addWidget(slider, 3, 0, 1, 2);
+        host.show();
+        host.activateWindow();
+        settle(host);
+
+        // Give each real styled widget keyboard focus in turn. A contact sheet
+        // records those separate states; this is not a desktop screenshot.
+        QImage contactSheet(740, 870, QImage::Format_ARGB32_Premultiplied);
+        contactSheet.fill(themeColors().bottom);
+        QPainter contact(&contactSheet);
+        contact.setPen(themeColors().text);
+        int y = 8;
+        const QList<QPair<QString, QWidget *>> samples{
+            {QStringLiteral("button"), action}, {QStringLiteral("input"), input},
+            {QStringLiteral("typeNavigation focused list"), types}, {QStringLiteral("tree"), tree},
+            {QStringLiteral("table"), table}, {QStringLiteral("slider"), slider}};
+        for (const auto &[name, widget] : samples) {
+            widget->setFocus(Qt::TabFocusReason);
+            settle(*widget);
+            QVERIFY2(widget->hasFocus(), qPrintable(name + QStringLiteral(" did not receive keyboard focus")));
+            const QImage rendered = raster(*widget);
+            const int longest = longestAccentPerimeterLine(rendered, themeColors().accent);
+            QVERIFY2(longest < 48, qPrintable(QStringLiteral("%1/%2 has a %3-pixel accent line around its perimeter")
+                                             .arg(theme, name).arg(longest)));
+            contact.drawText(10, y + 14, name + QStringLiteral(" — keyboard focus"));
+            contact.drawImage(QPoint(10, y + 21), rendered);
+            y += rendered.height() + 31;
+        }
+
+        // The selected row may have a quiet rounded fill. Its branch column
+        // must not become the solid square block seen beside an expanded folder.
+        // Clearing selection alone is insufficient: a focused current item can
+        // already draw the defective branch block in the supposedly plain frame.
+        input->setFocus(Qt::TabFocusReason);
+        tree->clearSelection();
+        tree->setCurrentIndex(QModelIndex());
+        settle(*tree);
+        QVERIFY(input->hasFocus());
+        QVERIFY(!tree->hasFocus() && !directory->isSelected() && !tree->currentIndex().isValid());
+        const QImage unselected = raster(*tree->viewport());
+        tree->setFocus(Qt::TabFocusReason);
+        tree->setCurrentItem(directory);
+        directory->setSelected(true);
+        settle(*tree);
+        QVERIFY(tree->hasFocus() && directory->isSelected());
+        const QImage selected = raster(*tree->viewport());
+        const QRect item = tree->visualItemRect(directory);
+        const QRect branch(2, item.top() + 3, item.left() - 4, item.height() - 6);
+        QVERIFY2(branch.width() >= 8 && branch.height() >= 8, "The branch sample must cover a real expanded-folder branch column.");
+        const int branchRun = longestChangedBranchRun(unselected, selected, branch);
+        QVERIFY2(branchRun < branch.height() * .55,
+                 qPrintable(QStringLiteral("%1 selected tree branch has a %2-row rectangular selection block").arg(theme).arg(branchRun)));
+        const int glyphPixels = contrastingBranchPixels(selected, branch);
+        QVERIFY2(glyphPixels >= 5 && glyphPixels < branch.width() * branch.height() / 2,
+                 qPrintable(QStringLiteral("%1 expanded branch needs a visible compact arrow, found %2 contrasting pixels")
+                            .arg(theme).arg(glyphPixels)));
+        QSignalSpy collapsed(tree, &QTreeWidget::itemCollapsed);
+        QSignalSpy expanded(tree, &QTreeWidget::itemExpanded);
+        QVERIFY(collapsed.isValid() && expanded.isValid());
+        QTest::mouseClick(tree->viewport(), Qt::LeftButton, Qt::NoModifier, branch.center());
+        settle(*tree);
+        QVERIFY2(!directory->isExpanded(), "Clicking the visible branch arrow must collapse its children.");
+        QCOMPARE(collapsed.count(), 1);
+        const QImage collapsedFrame = raster(*tree->viewport());
+        const int collapsedGlyphPixels = contrastingBranchPixels(collapsedFrame, branch);
+        QVERIFY2(collapsedGlyphPixels >= 5 && collapsedGlyphPixels < branch.width() * branch.height() / 2,
+                 "The collapsed branch arrow must remain visible and compact.");
+        QVERIFY2(changedBranchPixels(selected, collapsedFrame, branch) >= 4,
+                 "The branch glyph must visibly change direction after collapsing.");
+        QTest::mouseClick(tree->viewport(), Qt::LeftButton, Qt::NoModifier, branch.center());
+        settle(*tree);
+        QVERIFY2(directory->isExpanded(), "Clicking the branch arrow again must expand its children.");
+        QCOMPARE(expanded.count(), 1);
+        contact.drawText(380, 205, QStringLiteral("expanded selected branch"));
+        contact.drawImage(QPoint(380, 212), selected);
+
+        // Qt's native focus primitive must also be suppressed for widgets whose
+        // defaults are drawn by Fusion (including embedded file-dialog items).
+        QImage focusPrimitive(210, 60, QImage::Format_ARGB32_Premultiplied);
+        focusPrimitive.fill(Qt::transparent);
+        QStyleOptionFocusRect option;
+        option.initFrom(action);
+        option.rect = QRect(10, 10, 190, 38);
+        option.state |= QStyle::State_HasFocus | QStyle::State_KeyboardFocusChange;
+        option.backgroundColor = Qt::transparent;
+        QPainter focusPainter(&focusPrimitive);
+        action->style()->drawPrimitive(QStyle::PE_FrameFocusRect, &option, &focusPainter, action);
+        focusPainter.end();
+        int primitivePixels = 0;
+        for (int row = 0; row < focusPrimitive.height(); ++row)
+            for (int column = 0; column < focusPrimitive.width(); ++column)
+                if (focusPrimitive.pixelColor(column, row).alpha() != 0) ++primitivePixels;
+        QVERIFY2(primitivePixels == 0, "The default Qt focus primitive drew a rectangular focus outline.");
+
+        InspectorSummary summary;
+        summary.resize(280, 660);
+        summary.setAsset(asset());
+        summary.setPreviewPages(pages());
+        QPixmap emptyPreview(220, 220);
+        emptyPreview.fill(Qt::transparent);
+        summary.setPreviewImage(QStringLiteral("cover"), emptyPreview);
+        summary.show();
+        summary.activateWindow();
+        settle(summary);
+        auto carousel = summary.findChild<QWidget *>(QStringLiteral("inspectorCarousel"));
+        QVERIFY(carousel);
+        auto favorite = button(summary, "inspectorFavorite");
+        QVERIFY(favorite);
+        favorite->setFocus(Qt::TabFocusReason);
+        settle(summary);
+        QVERIFY(!carousel->hasFocus());
+        const QImage unfocusedPreview = raster(*carousel);
+        carousel->setFocus(Qt::TabFocusReason);
+        settle(summary);
+        QVERIFY(carousel->hasFocus());
+        const QImage preview = raster(*carousel);
+        QVERIFY2(longestAccentPerimeterLine(preview, themeColors().accent) < 48,
+                 "The inspector preview added a full rectangular outline when focused.");
+        QVERIFY2(longestChangedPerimeterLine(unfocusedPreview, preview) < 48,
+                 "Focusing the inspector preview drew a long opaque or translucent perimeter line.");
+        contact.drawText(380, 410, QStringLiteral("inspector preview — keyboard focus"));
+        contact.drawImage(QPoint(380, 417), preview);
+        contact.end();
+
+        const QString directoryPath = qEnvironmentVariable("IMAGIDOCK_INSPECTOR_ARTIFACT_DIR");
+        if (!directoryPath.isEmpty()) {
+            const QString project = QDir::cleanPath(QFileInfo(QString::fromUtf8(__FILE__)).dir().absoluteFilePath(".."));
+            const QString target = QDir::cleanPath(QFileInfo(directoryPath).absoluteFilePath());
+            QVERIFY2(target.startsWith(project + "/", Qt::CaseInsensitive), "Offscreen artifacts must stay inside the project directory.");
+            QVERIFY(QDir().mkpath(target));
+            QVERIFY(contactSheet.save(target + QStringLiteral("/global-controls-%1-offscreen.png").arg(theme)));
         }
     }
 };

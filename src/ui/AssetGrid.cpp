@@ -52,7 +52,7 @@ void AssetDelegate::paint(QPainter *p,const QStyleOptionViewItem &o,const QModel
     const bool selected=o.state&QStyle::State_Selected,hover=o.state&QStyle::State_MouseOver,focused=o.state&QStyle::State_HasFocus;
     const auto theme=themeColors();const QRect card=o.rect.adjusted(4,4,-4,-4);
     QColor surface=selected?theme.accent:theme.card;
-    surface.setAlpha(selected?(theme.light?26:20):(theme.light?(hover?126:104):(hover?23:14)));
+    surface.setAlpha(selected?(theme.light?40:36):(theme.light?(hover?126:104):(hover?23:14)));
     p->setPen(Qt::NoPen);p->setBrush(surface);p->drawRoundedRect(card,UiMetrics::CardRadius,UiMetrics::CardRadius);
 
     // One quiet boundary separates the full-image preview from its metadata.
@@ -86,11 +86,13 @@ void AssetDelegate::paint(QPainter *p,const QStyleOptionViewItem &o,const QModel
         p->setPen(QColor("#edc778"));p->drawText(image.adjusted(6,3,-5,-4),Qt::AlignTop|Qt::AlignRight,QString::fromUtf8("★"));
     }
 
-    // Focus and selection share the outer boundary instead of stacking rings.
-    QColor border=focused?theme.text:selected?theme.accent:theme.edge;
-    if(!selected&&!focused)border.setAlpha(theme.light?(hover?160:108):(hover?54:29));
-    p->setBrush(Qt::NoBrush);p->setPen(QPen(border,focused?2.:1.));
-    p->drawRoundedRect(QRectF(card).adjusted(.5,.5,-.5,-.5),UiMetrics::CardRadius,UiMetrics::CardRadius);
+    // A local marker keeps keyboard focus visible without framing the whole card.
+    if(selected||focused){
+        QColor marker=theme.accent;marker.setAlpha(focused?255:190);
+        p->setPen(QPen(marker,3,Qt::SolidLine,Qt::RoundCap));
+        p->drawLine(QPointF(card.left()+12,card.top()+6),
+                    QPointF(card.left()+(focused?36:28),card.top()+6));
+    }
     p->restore();
 }
 AssetGrid::AssetGrid(QWidget *p):QListView(p),m_delegate(new AssetDelegate(this)){setObjectName("assetGrid");setAccessibleName(tr("素材卡片列表"));setAccessibleDescription(tr("方向键选择素材，Enter 打开详情；Ctrl 或 Shift 多选。"));setViewMode(IconMode);setResizeMode(Adjust);setMovement(Static);setWrapping(true);setUniformItemSizes(true);setLayoutMode(Batched);setBatchSize(80);setSelectionMode(ExtendedSelection);setVerticalScrollMode(ScrollPerPixel);setMouseTracking(true);setSpacing(0);setAcceptDrops(true);setDragEnabled(false);setItemDelegate(m_delegate);setCardSize(176);}

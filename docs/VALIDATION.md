@@ -57,6 +57,14 @@
 
 检查通过 `QT_QPA_PLATFORM=offscreen` 完成，不启动桌面应用、不写用户库；中文字体由只读系统字体文件加载，没有安装或复制字体。回执为 `logs/inspector-v4-tests-final.txt`、`logs/inspector-v4-tests-final.xml`，四主题栅格图位于 `logs/inspector-v4-offscreen/`。Offscreen 插件的 `propagateSizeHints` 提示保留，不冒充无警告的桌面验收。按用户要求，完成后只打开一次正常程序供人工验收，本轮未重复 v3 的完整实屏／便携测试，也不将旧结果标为 v4 通过。
 
+### 2026-10-20 Linear v5 全局方框清理
+
+本地版本为 `0.1.0-rc.1+linear.20261020.5`，入口为 `ImagiDock-linear-v5.exe`。本轮范围包含列表／树／表格、按钮和输入框、网格卡片及右栏缩略图区的整体边线、Qt 原生焦点框回退和树分支方形选中底色；保留四主题毛玻璃、标签小圆角框及圆形加号，状态与键盘焦点使用填充或局部提示。
+
+QtTest 离屏检查获得 **21 passed、0 failed、0 skipped**，含初始化／清理，回执为 `logs/inspector-v5-tests-final.txt`、`logs/inspector-v5-tests-final.xml`。四主题右栏与全局控件栅格图在 `logs/inspector-v5-final-offscreen/`。像素检查覆盖按钮、输入框、类型列表、目录树、表格和滑块的焦点周界、Qt 原生焦点原语不绘制，以及透明轮播获焦前后边缘差分。目录树检查覆盖选中分支无整块底色、展开／收起箭头可见及方向变化，并通过真实 QtTest 鼠标点击核对折叠／展开信号。原有右栏翻页、异步旧图隔离、收藏／标签操作、来源／备份状态与窄栏布局检查继续通过；网格卡片经源码审阅，本轮没有独立卡片像素样例。
+
+早期检查漏掉选中分支实心底色，图像审查发现后补强测试并复现 4 项失败，最终修复。修复前回执保留于 `logs/inspector-v5-tree-regression-before.txt`、XML，失败结果不并入成功记录。离屏环境的字体目录和 `propagateSizeHints` 提示保留；中文字体只读加载，四主题图已目检无缺字。离屏结果不作为实屏或便携全回归证明，v3 的两档 517 项严格结果保持原版本范围。按用户要求，不重复启动可见验收窗口，完成后只打开一次正常新版供人工验收；原 RC 程序和已发布 ZIP 保持。
+
 ## 构建与运行环境
 
 本机 Windows x64 Release 已编译桌面程序、库服务、Filament 渲染助手、SAI1 助手和 Qt 媒体助手，支持中文工作区路径。主要组件为 Qt 6.8.3、Filament 1.78.0、Assimp 5.4.3、SQLite 3.50.4、Zstandard 1.5.7；3D 验证使用 RTX 4070 Ti / OpenGL。
