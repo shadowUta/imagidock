@@ -51,6 +51,12 @@
 
 便携检查清除开发 PATH／Qt／Python／Node 提示后，完成全部严格 UI 断言、包内 Python 解码依赖导入与 Node 启动，测试前后整个包目录文件集合、大小和修改时间一致。焦点测试新增主窗已激活及真实搜索框获焦两项前提；关闭后仅有限等待同一控件恢复，不重新设置焦点。测试仅撤销自身上一窗口的人工置顶，避免多个测试窗口同组竞争，普通应用窗口策略未变。两档颜色与晕染、透明预览、布局、关联和多窗口检查均通过；真实库 12 素材网格和模型详情的前后 GPU 桌面截图也已目检（`logs/linear-v3-demo-final-captures.json`），不公开原始美术或截图。前述 v2 的两档 513 项、v3 早期 515 项、原 RC 和失败调查保留各自历史口径。本机隔离验收仍不等于独立干净 Windows 系统验收。
 
+### 2026-10-20 Linear v4 右侧资产栏
+
+本地入口为 `ImagiDock-linear-v4.exe`。Release 构建成功，独立右栏组件检查获得 **17 passed、0 failed、0 skipped**，含初始化／清理。覆盖真实箭头、圆点及收藏按钮操作，旧页图像和失败结果不能覆盖当前页，同资产刷新保留页、不同资产重置，标签添加／删除信号，来源与未备份／已备份／过期可用／损坏备份语义，225／360 宽度排版与四主题中文渲染。
+
+检查通过 `QT_QPA_PLATFORM=offscreen` 完成，不启动桌面应用、不写用户库；中文字体由只读系统字体文件加载，没有安装或复制字体。回执为 `logs/inspector-v4-tests-final.txt`、`logs/inspector-v4-tests-final.xml`，四主题栅格图位于 `logs/inspector-v4-offscreen/`。Offscreen 插件的 `propagateSizeHints` 提示保留，不冒充无警告的桌面验收。按用户要求，完成后只打开一次正常程序供人工验收，本轮未重复 v3 的完整实屏／便携测试，也不将旧结果标为 v4 通过。
+
 ## 构建与运行环境
 
 本机 Windows x64 Release 已编译桌面程序、库服务、Filament 渲染助手、SAI1 助手和 Qt 媒体助手，支持中文工作区路径。主要组件为 Qt 6.8.3、Filament 1.78.0、Assimp 5.4.3、SQLite 3.50.4、Zstandard 1.5.7；3D 验证使用 RTX 4070 Ti / OpenGL。
