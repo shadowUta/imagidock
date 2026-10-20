@@ -6,8 +6,6 @@
 #include <QPainter>
 #include <QPainterPath>
 #include <QPixmap>
-#include <QRadialGradient>
-#include <array>
 
 namespace {
 QColor blend(const QColor &base, const QColor &tint, qreal amount)
@@ -20,31 +18,29 @@ QColor blend(const QColor &base, const QColor &tint, qreal amount)
 QGradientStops materialStops(GlassLayer layer, bool emphasized, bool pressed)
 {
     const auto colors = themeColors();
-    std::array<int, 3> opacity;
+    QColor body;
     switch (layer) {
     case GlassLayer::Panel:
-        opacity = colors.light ? std::array{74, 44, 53} : std::array{38, 20, 27};
+        body = colors.panel;
+        body.setAlpha(colors.light ? 60 : 16);
         break;
     case GlassLayer::Control:
-        opacity = colors.light ? std::array{87, 58, 70} : std::array{46, 28, 36};
+        body = colors.card;
+        body.setAlpha(colors.light ? 65 : 14);
         break;
     case GlassLayer::Card:
-        opacity = colors.light ? std::array{104, 72, 84} : std::array{43, 25, 30};
+        body = colors.card;
+        body.setAlpha(colors.light ? 104 : 14);
         break;
     }
-
-    QColor body = blend(colors.panel, colors.glow, colors.light ? .06 : .10);
-    if (emphasized || pressed)
-        body = blend(body, colors.accent, pressed ? .29 : .18);
-    QColor top = blend(body, Qt::white, colors.light ? .32 : .09);
-    QColor middle = body;
-    QColor bottom = blend(body, colors.bottom, pressed ? .12 : .035);
-    const int emphasis = emphasized ? (colors.light ? 15 : 12) : 0;
-    top.setAlpha(opacity[0] + emphasis - (pressed ? 16 : 0));
-    middle.setAlpha(opacity[1] + emphasis + (pressed ? 15 : 0));
-    bottom.setAlpha(opacity[2] + emphasis + (pressed ? 17 : 0));
-    // Broad reflection beneath the soft glass edge; never a native focus frame.
-    return {{0., top}, {.46, middle}, {1., bottom}};
+    if (emphasized || pressed) {
+        body = colors.accent;
+        body.setAlpha(pressed ? (colors.light ? 55 : 45)
+                             : layer == GlassLayer::Card ? (colors.light ? 40 : 36)
+                                                         : (colors.light ? 30 : 24));
+    }
+    // Uniform translucency restores the matte finish. There is no light band.
+    return {{0., body}, {.46, body}, {1., body}};
 }
 
 QString rgba(const QColor &color)
@@ -90,8 +86,7 @@ QLinearGradient glassGradient(const QRectF &rect, GlassLayer layer,
 QString glassStyleGradient(GlassLayer layer, bool emphasized, bool pressed)
 {
     const auto stops = materialStops(layer, emphasized, pressed);
-    return QStringLiteral("qlineargradient(x1:0,y1:0,x2:0.22,y2:1,stop:0 %1,stop:0.46 %2,stop:1 %3)")
-        .arg(rgba(stops[0].second), rgba(stops[1].second), rgba(stops[2].second));
+    return rgba(stops[0].second);
 }
 
 QColor glassEdge(GlassLayer layer, bool emphasized, bool pressed)
@@ -128,7 +123,6 @@ void paintGlassSurface(QPainter &painter, const QRectF &rect, qreal radius,
                        bool circular, bool outline)
 {
     if (rect.isEmpty()) return;
-    const auto colors = themeColors();
     painter.save();
     painter.setRenderHint(QPainter::Antialiasing);
     QPainterPath shape;
@@ -137,15 +131,6 @@ void paintGlassSurface(QPainter &painter, const QRectF &rect, qreal radius,
     painter.setClipPath(shape, Qt::IntersectClip);
     painter.fillRect(rect, glassGradient(rect, layer, emphasized, pressed));
 
-    // A soft reflection occupies an area; it never traces the box's outer edge.
-    const qreal spread = qMax(rect.width(), rect.height()) * .82;
-    QRadialGradient reflection(rect.topLeft() + QPointF(rect.width() * .21, 0), spread);
-    QColor light = blend(colors.glow, Qt::white, .60);
-    light.setAlpha(pressed ? 3 : (colors.light ? 10 : 7));
-    reflection.setColorAt(0, light);
-    light.setAlpha(0);
-    reflection.setColorAt(1, light);
-    painter.fillRect(rect, reflection);
     painter.fillRect(rect, QBrush(frostGrain()));
     painter.restore();
     if (outline) paintGlassOutline(painter, rect, radius, layer,

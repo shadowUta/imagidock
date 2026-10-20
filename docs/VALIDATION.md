@@ -89,6 +89,14 @@ Release 应用构建成功，回执为 `logs/linear-v6-final-build.log`。新网
 
 按用户要求，本轮完成后只打开一次正常新版供人工验收，不重复启动可见测试窗口，不关闭其他已打开的版本，也不修改默认库内容。离屏组件检查不作为实际桌面呈现或完整便携回归证明；独立干净 Windows 系统验收仍待完成。
 
+### 2026-10-20 Linear v8 恢复均匀磨砂
+
+本地版本为 `0.1.0-rc.1+linear.20261020.8`，入口为 `ImagiDock-linear-v8.exe`。按用户最新要求撤回 v7 表面的亮暗渐变、径向亮斑和定向反射，面板、卡片、按钮和标签恢复均匀半透明磨砂填充与固定微粒。浅色细边、原应用背景晕染、四主题色板及 v6 的网格布局保持。
+
+Release 构建成功，退出码为零，回执为 `logs/linear-v8-matte-build.log`。QtTest 在 `QT_QPA_PLATFORM=offscreen`、`QT_SCALE_FACTOR=1`／`1.5` 下，各获得右栏与全局控件 **21 passed、0 failed、0 skipped** 和网格绘制定向检查 **11 passed、0 failed、0 skipped**，含初始化／清理，合计 64 项结果。右栏两档分别耗时 295／332 ms，网格两档分别耗时 472／491 ms。回执为 `logs/matte-v8-inspector-100.txt`／XML、`logs/matte-v8-inspector-150.txt`／XML、`logs/matte-v8-grid-100.txt`／XML 和 `logs/matte-v8-grid-150.txt`／XML；离屏图像保存在对应同名目录。
+
+已目检 100% 石墨黑控件、冰青检查器与四主题卡片联系表，表面均匀磨砂无高光带，透明预览及浅色细边正常。Qt 离屏字体目录和 `propagateSizeHints` 环境提示保留。本轮范围仅为绘制回退，未重跑网格布局压力、严格桌面呈现或完整便携回归；v7 的两档 21＋21 项、v6 的两档 17 项、v5 的 21 项和 v3 的 517 项均保留各自历史范围，不计作本轮通过。检查不写用户库；完成后只打开一次正常 v8 供人工验收，不重复启动可见测试窗口，不关闭其他已打开的版本。
+
 ## 构建与运行环境
 
 本机 Windows x64 Release 已编译桌面程序、库服务、Filament 渲染助手、SAI1 助手和 Qt 媒体助手，支持中文工作区路径。主要组件为 Qt 6.8.3、Filament 1.78.0、Assimp 5.4.3、SQLite 3.50.4、Zstandard 1.5.7；3D 验证使用 RTX 4070 Ti / OpenGL。

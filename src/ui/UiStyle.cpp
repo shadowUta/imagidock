@@ -90,8 +90,7 @@ void applyUiTheme(const QString &requested)
             .arg(c.red()).arg(c.green()).arg(c.blue()).arg(c.alpha());
     };
     const auto gradientCss = [&rgba](const QGradientStops &stops) {
-        return QStringLiteral("qlineargradient(x1:0,y1:0,x2:0.22,y2:1,stop:0 %1,stop:0.46 %2,stop:1 %3)")
-            .arg(rgba(stops[0].second), rgba(stops[1].second), rgba(stops[2].second));
+        return rgba(stops[0].second);
     };
     auto popupStops = glassGradient(QRectF(0, 0, 1, 1), GlassLayer::Panel).stops();
     for (auto &stop : popupStops) {
@@ -119,8 +118,8 @@ QMenuBar { background: transparent; padding: 0; border: 0; }
 QLabel#windowBrand { font-size: 13px; font-weight: 600; padding: 0 4px; }
 QWidget#windowHeader { background: {{panel}}; border: 1px solid {{panelEdge}}; border-radius: {{panelRadius}}px; }
 QToolButton#windowButton, QToolButton#windowClose { border-width: 1px; border-style: solid; border-radius: 6px; padding: 0; }
-QToolButton#windowClose:hover { background: qlineargradient(x1:0,y1:0,x2:0.22,y2:1,stop:0 rgba(224,138,145,155),stop:0.46 rgba(198,82,92,128),stop:1 rgba(181,63,76,145)); }
-QToolButton#windowClose:pressed { background: qlineargradient(x1:0,y1:0,x2:0.22,y2:1,stop:0 rgba(203,103,114,170),stop:0.46 rgba(187,64,78,185),stop:1 rgba(176,53,70,190)); }
+QToolButton#windowClose:hover { background: rgba(198,82,92,128); }
+QToolButton#windowClose:pressed { background: rgba(187,64,78,185); }
 QMenuBar::item { background: {{control}}; border: 1px solid {{controlEdge}}; padding: 3px 7px; border-radius: 6px; }
 QMenuBar::item:selected { background: {{active}}; border-color: {{activeEdge}}; }
 QMenuBar::item:pressed { background: {{pressed}}; border-color: {{pressedEdge}}; }
